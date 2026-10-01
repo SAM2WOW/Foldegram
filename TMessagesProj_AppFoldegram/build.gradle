@@ -10,6 +10,8 @@ if (!setupOnly) {
 dependencies {
     if (!setupOnly) {
         implementation project(':TMessagesProj')
+        // Activity superclass is part of our public manifest contract; expose it to app lint.
+        implementation 'androidx.fragment:fragment:1.5.7'
         implementation files('../TMessagesProj/libs/libgsaverification-client.aar')
         coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
     }

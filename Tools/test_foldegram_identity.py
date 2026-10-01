@@ -22,7 +22,7 @@ for source in (APP / 'src/main/res', APP / 'src/common/res'):
             assert identity not in seen, f'duplicate resource in main source set: {identity}'
             seen.add(identity)
 
-xml = APP / 'src/main/res/xml' 
+xml = APP / 'src/main/res/xml'
 assert E.parse(xml / 'auth.xml').getroot().get(ANDROID + 'accountType') == ID
 assert E.parse(xml / 'sync_contacts.xml').getroot().get(ANDROID + 'accountType') == ID
 assert E.parse(xml / 'auth_menu.xml').find('.//intent').get(ANDROID + 'targetPackage') == ID

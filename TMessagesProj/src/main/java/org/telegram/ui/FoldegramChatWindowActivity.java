@@ -8,6 +8,9 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.widget.FrameLayout;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.text.TextUtils;
@@ -51,7 +54,7 @@ import org.telegram.ui.Components.ChatActivityEnterView;
 import org.telegram.ui.Components.Forum.ForumUtilities;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.PasscodeView;
-import org.telegram.ui.Components.ScrollSlidingTextTabStrip;
+
 import org.telegram.ui.Components.ThemeEditorView;
 
 import java.util.ArrayList;
@@ -76,12 +79,16 @@ public class FoldegramChatWindowActivity extends BasePermissionsActivity impleme
     private final ArrayList<BaseFragment> firstStack = new ArrayList<>();
     private final ArrayList<BaseFragment> secondStack = new ArrayList<>();
     private final INavigationLayout[] paneLayouts = new INavigationLayout[2];
-    private ScrollSlidingTextTabStrip paneTabs;
+    private final TextView[] paneSelectors = new TextView[2];
+    private FrameLayout content;
+    private FrameLayout sidebarOverlay;
+    private INavigationLayout sidebarLayout;
+    private boolean sidebarOpen;
     private final String[] paneNames = new String[2];
     private final Bundle[] rootArguments = new Bundle[2];
     private final SparseIntArray resultPanes = new SparseIntArray();
     private DrawerLayoutContainer root;
-    private LinearLayout toolbar;
+
     private PaneContainer panes;
     private PasscodeView passcodeView;
     private FlagSecureReason passcodeSecureReason;
@@ -109,13 +116,13 @@ public class FoldegramChatWindowActivity extends BasePermissionsActivity impleme
                 || activity.passcodeView == null || activity.passcodeView.getVisibility() == View.VISIBLE) {
             return null;
         }
-        INavigationLayout layout = activity.paneLayouts[activity.activePane];
+        INavigationLayout layout = activity.sidebarOpen ? activity.sidebarLayout : activity.paneLayouts[activity.activePane];
         return layout == null ? null : layout.getSafeLastFragment();
     }
 
     /** Drop listeners must call this only for the actual destination, not DRAG_STARTED. */
     public boolean activateForDrop(ChatActivity owner) {
-        if (!resumed || destroyed || isFinishing() || !chatsCreated || SharedConfig.appLocked
+        if (!resumed || destroyed || sidebarOpen || isFinishing() || !chatsCreated || SharedConfig.appLocked
                 || SharedConfig.isWaitingForPasscodeEnter || passcodeView.getVisibility() == View.VISIBLE
                 || owner == null || owner.getParentActivity() != this || panes.getVisibility() != View.VISIBLE) {
             return false;
@@ -320,8 +327,7 @@ public class FoldegramChatWindowActivity extends BasePermissionsActivity impleme
     private void buildViews() {
         root = new DrawerLayoutContainer(this);
         setContentView(root, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
+        content = new FrameLayout(this);
         // DrawerLayoutContainer draws edge-to-edge. Own the full workspace's insets once;
         // an IME reduces both pane viewports without applying its padding twice in each chat.
         ViewCompat.setOnApplyWindowInsetsListener(content, (view, windowInsets) -> {
@@ -330,27 +336,9 @@ public class FoldegramChatWindowActivity extends BasePermissionsActivity impleme
             return WindowInsetsCompat.CONSUMED;
         });
         root.addView(content, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
-        toolbar = new LinearLayout(this);
-        toolbar.setGravity(Gravity.CENTER_VERTICAL);
-        content.addView(toolbar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(48)));
-        ImageView close = toolbarIcon(R.drawable.ic_ab_back, R.string.FoldegramCloseTwoChats);
-        close.setOnClickListener(view -> finish());
-        paneTabs = new ScrollSlidingTextTabStrip(this);
-        paneTabs.setUseSameWidth(true);
-        paneTabs.setDelegate(new ScrollSlidingTextTabStrip.ScrollSlidingTabStripDelegate() {
-            @Override public void onPageSelected(int page, boolean forward) { setActivePane(page, true); }
-            @Override public void onPageScrolled(float progress) { }
-            @Override public boolean showOptions(int page, View view) {
-                setActivePane(page, true);
-                showReplacementPicker();
-                return true;
-            }
-        });
-        toolbar.addView(paneTabs, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
-        ImageView replace = toolbarIcon(R.drawable.msg_replace, R.string.FoldegramChangeActiveChat);
-        replace.setOnClickListener(view -> showReplacementPicker());
+        // Each chat already owns Telegram's native glass header. Do not stack a workspace bar above it.
         panes = new PaneContainer(this);
-        content.addView(panes, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        content.addView(panes, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
         for (int i = 0; i < 2; i++) {
             INavigationLayout layout = paneLayouts[i] = INavigationLayout.newLayout(this, false);
             // Reuse Telegram's embedded-window geometry, without BubbleActivity or its singleton/global close behavior.
@@ -387,18 +375,6 @@ public class FoldegramChatWindowActivity extends BasePermissionsActivity impleme
             NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.passcodeDismissed, view);
         });
         updateToolbar();
-    }
-
-    private ImageView toolbarIcon(int icon, int description) {
-        ImageView view = new ImageView(this);
-        view.setImageResource(icon);
-        view.setColorFilter(Theme.getColor(Theme.key_actionBarDefaultIcon));
-        view.setScaleType(ImageView.ScaleType.CENTER);
-        // Custom strings use Android resources: Telegram's packed locale build scans only strings.xml.
-        view.setContentDescription(getString(description));
-        view.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_actionBarDefaultSelector)));
-        toolbar.addView(view, new LinearLayout.LayoutParams(AndroidUtilities.dp(48), ViewGroup.LayoutParams.MATCH_PARENT));
-        return view;
     }
 
     private void createChats() {
@@ -443,14 +419,92 @@ public class FoldegramChatWindowActivity extends BasePermissionsActivity impleme
         return chat;
     }
 
+    public void openConversationSidebar(ChatActivity source) {
+        for (int i = 0; i < paneLayouts.length; i++) {
+            if (paneLayouts[i].getLastFragment() == source) {
+                setActivePane(i, true);
+                showReplacementPicker();
+                return;
+            }
+        }
+    }
+
     private void showReplacementPicker() {
-        if (!chatsCreated || passcodeView.getVisibility() == View.VISIBLE) {
+        if (!resumed || !chatsCreated || destroyed || shouldLock() || passcodeView.getVisibility() == View.VISIBLE) return;
+        if (sidebarOpen) { closeSidebar(); return; }
+        ChatActivity current = lastChat(activePane);
+        if (current == null || !canTransferComposition(current)) {
+            Toast.makeText(this, R.string.FoldegramFinishComposition, Toast.LENGTH_LONG).show();
             return;
         }
-        final int targetPane = activePane;
+        AndroidUtilities.hideKeyboard(getCurrentFocus());
+        if (paneResumed) { paneLayouts[activePane].onPause(); paneResumed = false; }
+        sidebarOpen = true;
+        sidebarOverlay = new FrameLayout(this) {
+            @Override protected void onMeasure(int w, int h) {
+                if (getChildCount() > 1) {
+                    // Overlay instead of a cramped third column; always leave a dismiss target.
+                    getChildAt(1).getLayoutParams().width = Math.min(AndroidUtilities.dp(360),
+                            Math.max(0, MeasureSpec.getSize(w) - AndroidUtilities.dp(40)));
+                }
+                super.onMeasure(w, h);
+            }
+        };
+        View scrim = new View(this);
+        scrim.setBackgroundColor(0x66000000);
+        scrim.setContentDescription(getString(R.string.FoldegramCloseSidebar));
+        scrim.setOnClickListener(v -> closeSidebar());
+        sidebarOverlay.addView(scrim, LayoutHelper.createFrame(-1, -1));
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        panel.setElevation(AndroidUtilities.dp(8));
+        sidebarOverlay.addView(panel, LayoutHelper.createFrame(360, -1, Gravity.LEFT));
+        LinearLayout selector = new LinearLayout(this);
+        selector.setGravity(Gravity.CENTER_VERTICAL);
+        selector.setPadding(AndroidUtilities.dp(4), AndroidUtilities.dp(4), AndroidUtilities.dp(4), AndroidUtilities.dp(4));
+        panel.addView(selector, new LinearLayout.LayoutParams(-1, AndroidUtilities.dp(56)));
+        for (int i = 0; i < 2; i++) {
+            final int pane = i;
+            TextView tab = paneSelectors[i] = new TextView(this);
+            tab.setTextSize(13);
+            tab.setTypeface(AndroidUtilities.bold());
+            tab.setGravity(Gravity.CENTER);
+            tab.setSingleLine();
+            tab.setEllipsize(TextUtils.TruncateAt.END);
+            tab.setPadding(AndroidUtilities.dp(8), 0, AndroidUtilities.dp(8), 0);
+            tab.setOnClickListener(v -> setActivePane(pane, true));
+            selector.addView(tab, new LinearLayout.LayoutParams(0, -1, 1));
+        }
+        ImageView close = new ImageView(this);
+        close.setImageResource(R.drawable.ic_close_white);
+        close.setColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+        close.setScaleType(ImageView.ScaleType.CENTER);
+        close.setContentDescription(getString(R.string.FoldegramCloseSidebar));
+        close.setBackground(Theme.AdaptiveRipple.circle());
+        close.setOnClickListener(v -> closeSidebar());
+        selector.addView(close, new LinearLayout.LayoutParams(AndroidUtilities.dp(48), -1));
+        sidebarLayout = INavigationLayout.newLayout(this, false);
+        sidebarLayout.setInBubbleMode(true);
+        sidebarLayout.setRemoveActionBarExtraHeight(true);
+        sidebarLayout.setFragmentStack(new ArrayList<>());
+        sidebarLayout.setDrawerLayoutContainer(root);
+        sidebarLayout.setDelegate(this);
+        panel.addView(sidebarLayout.getView(), new LinearLayout.LayoutParams(-1, 0, 1));
+        TextView exit = new TextView(this);
+        exit.setText(R.string.FoldegramCloseTwoChats);
+        exit.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText));
+        exit.setGravity(Gravity.CENTER);
+        exit.setBackground(Theme.AdaptiveRipple.rect());
+        exit.setOnClickListener(v -> finish());
+        panel.addView(exit, new LinearLayout.LayoutParams(-1, AndroidUtilities.dp(48)));
         DialogsActivity picker = createPicker(currentAccount);
         picker.setDelegate((fragment, selected, message, param, notify, scheduleDate, repeat, topics) -> {
-            if (selected.isEmpty()) {
+            if (selected.isEmpty() || !sidebarOpen || !resumed || shouldLock()) return false;
+            final int targetPane = activePane;
+            ChatActivity previous = lastChat(targetPane);
+            if (previous == null || !canTransferComposition(previous)) {
+                Toast.makeText(this, R.string.FoldegramFinishComposition, Toast.LENGTH_LONG).show();
                 return false;
             }
             MessagesStorage.TopicKey selection = selected.get(0);
@@ -459,32 +513,47 @@ public class FoldegramChatWindowActivity extends BasePermissionsActivity impleme
                 Toast.makeText(this, R.string.FoldegramChooseDifferentChat, Toast.LENGTH_SHORT).show();
                 return false;
             }
+            if (selection.dialogId == previous.getDialogId() && selection.topicId == previous.getTopicId()) {
+                closeSidebar(); return true;
+            }
             Bundle args = argumentsForDialog(selection.dialogId, selection.topicId);
-            if (!MessagesController.getInstance(currentAccount).checkCanOpenChat(args, fragment)) {
-                return false;
-            }
+            if (!MessagesController.getInstance(currentAccount).checkCanOpenChat(args, fragment)) return false;
             ChatActivity chat = createChat(args);
-            if (chat == null) {
-                Toast.makeText(this, R.string.FoldegramReopenChats, Toast.LENGTH_LONG).show();
-                return false;
-            }
+            if (chat == null) return false;
             savePaneDraft(targetPane);
-            paneLayouts[targetPane].removeAllFragments();
-            paneResumed = false;
-            rootArguments[targetPane] = args;
-            if (!paneLayouts[targetPane].addFragmentToStack(chat)) {
-                finish();
-                return true;
-            }
-            paneLayouts[targetPane].showLastFragment();
-            paneResumed = resumed;
-            if (!resumed) {
-                paneLayouts[targetPane].onPause();
-            }
+            closeSidebar();
+            // Normal navigation retains the previous chat's draft and scroll state for Back.
+            // The other pane's entire navigation stack is untouched.
+            paneLayouts[targetPane].presentFragment(chat);
             updateToolbar();
             return true;
         });
-        paneLayouts[targetPane].presentFragment(picker);
+        content.addView(sidebarOverlay, LayoutHelper.createFrame(-1, -1));
+        panes.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        sidebarLayout.addFragmentToStack(picker);
+        sidebarLayout.showLastFragment();
+        // showLastFragment owns the initial resume; closeSidebar balances it.
+        updateToolbar();
+        panel.setTranslationX(-AndroidUtilities.dp(360));
+        panel.animate().translationX(0).setDuration(180).start();
+    }
+
+    private void closeSidebar() {
+        if (!sidebarOpen) return;
+        sidebarOpen = false;
+        AndroidUtilities.hideKeyboard(getCurrentFocus());
+        if (sidebarLayout != null) {
+            sidebarLayout.onPause();
+            sidebarLayout.removeAllFragments();
+            sidebarLayout = null;
+        }
+        if (sidebarOverlay != null) {
+            content.removeView(sidebarOverlay);
+            sidebarOverlay = null;
+        }
+        paneSelectors[0] = paneSelectors[1] = null;
+        panes.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+        if (!destroyed) resumeActivePane();
     }
 
     private ChatActivity lastChat(int pane) {
@@ -527,7 +596,8 @@ public class FoldegramChatWindowActivity extends BasePermissionsActivity impleme
     }
 
     private void resumeActivePane() {
-        if (resumed && chatsCreated && !paneResumed && passcodeView.getVisibility() != View.VISIBLE && !isFinishing()) {
+        if (resumed && !destroyed && !SharedConfig.appLocked && !SharedConfig.isWaitingForPasscodeEnter
+                && chatsCreated && !paneResumed && !sidebarOpen && passcodeView.getVisibility() != View.VISIBLE && !isFinishing()) {
             paneLayouts[activePane].onResume();
             paneResumed = true;
         }
@@ -539,47 +609,38 @@ public class FoldegramChatWindowActivity extends BasePermissionsActivity impleme
             return;
         }
         panes.setVisibility(View.VISIBLE);
-        toolbar.setVisibility(View.VISIBLE);
+
         createChats();
         applyPendingTheme();
         resumeActivePane();
     }
 
     private void updateToolbar() {
-        if (toolbar == null) {
-            return;
-        }
-        toolbar.setBackgroundColor(Theme.getColor(Theme.key_actionBarDefault));
-        paneTabs.setColors(Theme.key_actionBarTabLine, Theme.key_actionBarTabActiveText,
-                Theme.key_actionBarTabUnactiveText, Theme.key_actionBarTabSelector);
-        boolean changed = paneTabs.getTabsCount() != 2;
         for (int i = 0; i < 2; i++) {
             ChatActivity chat = lastChat(i);
             long did = chat != null ? chat.getDialogId() : dialogId(rootArguments[i]);
             String name = DialogObject.getName(currentAccount, did);
             if (TextUtils.isEmpty(name)) name = LocaleController.getString(R.string.SelectChat);
-            changed |= !TextUtils.equals(paneNames[i], name);
             paneNames[i] = name;
-        }
-        if (changed) {
-            paneTabs.removeTabs();
-            paneTabs.setInitialTabId(activePane);
-            for (int i = 0; i < 2; i++) paneTabs.addTextTab(i, paneNames[i]);
-            paneTabs.finishAddingTabs();
-        }
-        paneTabs.selectTabWithId(activePane, 1f);
-        for (int i = 0; i < toolbar.getChildCount(); i++) {
-            if (toolbar.getChildAt(i) instanceof ImageView) {
-                ((ImageView) toolbar.getChildAt(i)).setColorFilter(Theme.getColor(Theme.key_actionBarDefaultIcon));
-                toolbar.getChildAt(i).setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_actionBarDefaultSelector)));
+            if (paneSelectors[i] != null) {
+                TextView tab = paneSelectors[i];
+                tab.setText(name);
+                tab.setSelected(i == activePane);
+                tab.setContentDescription(getString(i == 0 ? R.string.FoldegramLeftPane : R.string.FoldegramRightPane, name));
+                tab.setTextColor(Theme.getColor(i == activePane ? Theme.key_windowBackgroundWhiteBlueText : Theme.key_windowBackgroundWhiteBlackText));
+                tab.setBackground(Theme.AdaptiveRipple.filledRect(i == activePane
+                        ? Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText), .15f) : 0, 24));
             }
         }
-        if (panes != null) panes.setBackgroundColor(Theme.getColor(Theme.key_divider));
+        if (panes != null) {
+            panes.setBackgroundColor(Theme.getColor(Theme.key_divider));
+            panes.invalidate();
+        }
     }
 
     /** Direct long-press drag is confined to a visible two-chat workspace. */
     public boolean canStartMessageDrag(ChatActivity source) {
-        return resumed && !destroyed && panes != null && panes.dualPane && panes.isShown()
+        return resumed && !destroyed && !sidebarOpen && panes != null && panes.dualPane && panes.isShown()
                 && passcodeView.getVisibility() != View.VISIBLE
                 && paneLayouts[0].getLastFragment() instanceof ChatActivity
                 && paneLayouts[1].getLastFragment() instanceof ChatActivity
@@ -626,13 +687,13 @@ public class FoldegramChatWindowActivity extends BasePermissionsActivity impleme
         if (ArticleViewer.hasInstance() && ArticleViewer.getInstance().isVisible()) {
             ArticleViewer.getInstance().close(false, true);
         }
+        SharedConfig.appLocked = true;
+        SharedConfig.isWaitingForPasscodeEnter = true;
         panes.setVisibility(View.INVISIBLE);
-        toolbar.setVisibility(View.INVISIBLE);
+        closeSidebar();
         for (INavigationLayout layout : paneLayouts) {
             layout.dismissDialogs();
         }
-        SharedConfig.appLocked = true;
-        SharedConfig.isWaitingForPasscodeEnter = true;
         passcodeView.onShow(true, false);
     }
 
@@ -706,6 +767,7 @@ public class FoldegramChatWindowActivity extends BasePermissionsActivity impleme
     protected void onPause() {
         super.onPause();
         resumed = false;
+        closeSidebar();
         if (foregroundInstance == this) {
             foregroundInstance = null;
         }
@@ -761,6 +823,7 @@ public class FoldegramChatWindowActivity extends BasePermissionsActivity impleme
     @Override
     protected void onDestroy() {
         destroyed = true;
+        closeSidebar();
         if (foregroundInstance == this) {
             foregroundInstance = null;
         }
@@ -801,6 +864,8 @@ public class FoldegramChatWindowActivity extends BasePermissionsActivity impleme
     public void onBackPressed() {
         if (root == null || passcodeView.getVisibility() == View.VISIBLE) {
             finish();
+        } else if (sidebarOpen) {
+            sidebarLayout.onBackPressed();
         } else if (SecretMediaViewer.hasInstance() && SecretMediaViewer.getInstance().isVisible()) {
             SecretMediaViewer.getInstance().closePhoto(true, false);
         } else if (PhotoViewer.hasInstance() && PhotoViewer.getInstance().isVisible()) {
@@ -812,6 +877,11 @@ public class FoldegramChatWindowActivity extends BasePermissionsActivity impleme
 
     @Override
     public boolean needCloseLastFragment(INavigationLayout layout) {
+        if (layout == sidebarLayout) {
+            if (layout.getFragmentStack().size() > 1) return true;
+            closeSidebar();
+            return false;
+        }
         if (layout.getFragmentStack().size() <= 1) {
             finish();
             return false;
@@ -821,6 +891,7 @@ public class FoldegramChatWindowActivity extends BasePermissionsActivity impleme
 
     @Override
     public boolean needPresentFragment(INavigationLayout layout, INavigationLayout.NavigationParams params) {
+        if (layout == sidebarLayout) return true;
         setActivePane(layout == paneLayouts[0] ? 0 : 1, false);
         return true;
     }
@@ -901,6 +972,7 @@ public class FoldegramChatWindowActivity extends BasePermissionsActivity impleme
                 showPasscode();
             }
         } else if (id == NotificationCenter.didSetNewTheme) {
+            closeSidebar();
             themeRebuildPending = true;
             applyPendingTheme();
         }
@@ -908,6 +980,20 @@ public class FoldegramChatWindowActivity extends BasePermissionsActivity impleme
 
     private final class PaneContainer extends ViewGroup {
         private boolean dualPane;
+        private final Paint focusPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        @Override protected void dispatchDraw(Canvas canvas) {
+            super.dispatchDraw(canvas);
+            if (dualPane && getChildCount() == 2) {
+                View active = getChildAt(activePane);
+                focusPaint.setStyle(Paint.Style.STROKE);
+                focusPaint.setStrokeWidth(AndroidUtilities.dp(2));
+                focusPaint.setColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText));
+                float inset = AndroidUtilities.dp(1);
+                canvas.drawRect(active.getLeft() + inset, inset, active.getRight() - inset,
+                        getHeight() - inset, focusPaint);
+            }
+        }
 
         PaneContainer(Context context) {
             super(context);

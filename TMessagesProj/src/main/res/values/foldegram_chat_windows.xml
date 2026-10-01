@@ -7,4 +7,9 @@
     <string name="FoldegramFocusChat">Focus conversation %1$d: %2$s</string>
     <string name="FoldegramFinishComposition">Finish or cancel your edit, recording, attachment, or forwarding preview before opening two chats</string>
     <string name="FoldegramIntroBody">An unofficial Telegram client with a two-chat workspace. Built from Telegram open-source software.</string>
+    <string name="FoldegramOpenTwoChats">Open two chats</string>
+    <string name="FoldegramConversations">Switch conversation or pane</string>
+    <string name="FoldegramCloseSidebar">Close conversation sidebar</string>
+    <string name="FoldegramLeftPane">Left pane: %1$s</string>
+    <string name="FoldegramRightPane">Right pane: %1$s</string>
 </resources>

@@ -3956,7 +3956,11 @@ public class ChatActivity extends BaseFragment implements
                     updatePinnedMessageView(true);
                     updateVisibleRows();
                 } else if (id == foldegram_open_second_chat) {
-                    FoldegramChatWindowActivity.showChatPicker(ChatActivity.this);
+                    if (getParentActivity() instanceof FoldegramChatWindowActivity) {
+                        ((FoldegramChatWindowActivity) getParentActivity()).openConversationSidebar(ChatActivity.this);
+                    } else {
+                        FoldegramChatWindowActivity.showChatPicker(ChatActivity.this);
+                    }
                 } else if (id == edit_quick_reply) {
                     QuickRepliesController.QuickReply currentQuickReply = QuickRepliesController.getInstance(currentAccount).findReply(getQuickReplyId());
                     QuickRepliesActivity.openRenameReplyAlert(getContext(), currentAccount, quickReplyShortcut, currentQuickReply, getResourceProvider(), false, name -> {
@@ -4306,6 +4310,15 @@ public class ChatActivity extends BaseFragment implements
         editTextItem.setTag(null);
         editTextItem.setVisibility(View.GONE);
 
+        if (Build.VERSION.SDK_INT >= 24 && (getParentActivity() instanceof FoldegramChatWindowActivity
+                || FoldegramChatWindowActivity.canOpenFrom(this))) {
+            boolean workspace = getParentActivity() instanceof FoldegramChatWindowActivity;
+            ActionBarMenuItem workspaceItem = menu.addItem(foldegram_open_second_chat,
+                    workspace ? R.drawable.menu_sidebar_left : R.drawable.foldegram_split_view);
+            workspaceItem.setContentDescription(context.getString(workspace
+                    ? R.string.FoldegramConversations : R.string.FoldegramOpenTwoChats));
+        }
+
         otherIcon = new ComposeDrawable(
             context.getResources().getDrawable(R.drawable.ic_ab_other).mutate(),
             context.getResources().getDrawable(R.drawable.mini_attach).mutate()
@@ -4332,7 +4345,7 @@ public class ChatActivity extends BaseFragment implements
             otherIcon.addView(headerItem.getIconView());
             headerItem.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions));
             if (Build.VERSION.SDK_INT >= 24 && FoldegramChatWindowActivity.canOpenFrom(this)) {
-                headerItem.addSubItem(foldegram_open_second_chat, R.drawable.msg_topics, "Open second chat");
+                headerItem.addSubItem(foldegram_open_second_chat, R.drawable.foldegram_split_view, context.getString(R.string.FoldegramOpenTwoChats));
             }
 
             if (currentUser != null && currentUser.self && chatMode != MODE_SAVED) {

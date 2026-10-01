@@ -31,6 +31,11 @@ public class DrawerLayoutContainer extends FrameLayout {
     private INavigationLayout parentActionBarLayout;
     private ActionBarLayout actionBarLayout;
     private boolean inLayout;
+    private boolean publishSystemBarMetrics = true;
+
+    public void setPublishSystemBarMetrics(boolean publish) {
+        publishSystemBarMetrics = publish;
+    }
 
     public DrawerLayoutContainer(Context context) {
         super(context);
@@ -187,6 +192,26 @@ public class DrawerLayoutContainer extends FrameLayout {
         }
     }
 
+    private boolean updateSharedSystemBarMetrics(Insets insets) {
+        if (!publishSystemBarMetrics) {
+            return false;
+        }
+        boolean changed = AndroidUtilities.statusBarHeight != insets.top
+                || AndroidUtilities.navigationBarHeight != insets.bottom;
+        AndroidUtilities.statusBarHeight = insets.top;
+        AndroidUtilities.navigationBarHeight = insets.bottom;
+        return changed;
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasWindowFocus) {
+        super.onWindowFocusChanged(hasWindowFocus);
+        if (hasWindowFocus) {
+            // Returning from a bubble need not change this root's dimensions.
+            ViewCompat.requestApplyInsets(this);
+        }
+    }
+
     @NonNull
     private WindowInsetsCompat onApplyWindowInsets(@NonNull View ignoredV, @NonNull WindowInsetsCompat insets) {
         lastWindowInsetsCompat = insets;
@@ -194,10 +219,10 @@ public class DrawerLayoutContainer extends FrameLayout {
         final Insets systemInsets = AndroidUtilities.getDefaultWindowInsets(insets, false);
         final Insets systemAndImeInsets = AndroidUtilities.getDefaultWindowInsets(insets, true);
 
-        if (!systemAndCutoutInsets.equals(systemInsets) || !systemAndCutoutAndImeInsets.equals(systemAndImeInsets)) {
-            AndroidUtilities.statusBarHeight = systemInsets.top;
-            AndroidUtilities.navigationBarHeight = systemInsets.bottom;
-
+        // A bubble's window-local zero insets must not replace full-window metrics.
+        // Reconcile even when this root's own insets have not changed since last dispatch.
+        final boolean sharedMetricsChanged = updateSharedSystemBarMetrics(systemInsets);
+        if (sharedMetricsChanged || !systemAndCutoutInsets.equals(systemInsets) || !systemAndCutoutAndImeInsets.equals(systemAndImeInsets)) {
             systemAndCutoutInsets = systemInsets;
             systemAndCutoutAndImeInsets = systemAndImeInsets;
             requestLayout();

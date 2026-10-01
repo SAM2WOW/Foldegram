@@ -93,13 +93,14 @@ public class BubbleActivity extends BasePermissionsActivity implements INavigati
         actionBarLayout.setRemoveActionBarExtraHeight(true);
 
         drawerLayoutContainer = new DrawerLayoutContainer(this);
+        drawerLayoutContainer.setParentActionBarLayout(actionBarLayout);
+        drawerLayoutContainer.setPublishSystemBarMetrics(false);
         setContentView(drawerLayoutContainer, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         RelativeLayout launchLayout = new RelativeLayout(this);
         drawerLayoutContainer.addView(launchLayout, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
         launchLayout.addView(actionBarLayout.getView(), LayoutHelper.createRelative(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
-        drawerLayoutContainer.setParentActionBarLayout(actionBarLayout);
         actionBarLayout.setDrawerLayoutContainer(drawerLayoutContainer);
         actionBarLayout.setFragmentStack(mainFragmentsStack);
         actionBarLayout.setDelegate(this);

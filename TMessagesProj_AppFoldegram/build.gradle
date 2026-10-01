@@ -27,8 +27,8 @@ android {
         applicationId 'dev.foldegram.messenger'
         minSdkVersion 23
         targetSdkVersion 36
-        versionCode Integer.parseInt(APP_VERSION_CODE) * 10 + 10
-        versionName APP_VERSION_NAME + (setupOnly ? '-foldegram-setup' : '-foldegram-dev2')
+        versionCode Integer.parseInt(APP_VERSION_CODE) * 10 + 11
+        versionName APP_VERSION_NAME + (setupOnly ? '-foldegram-setup' : '-foldegram-dev3')
         multiDexEnabled true
         ndk { abiFilters 'arm64-v8a' }
         vectorDrawables.useSupportLibrary = true

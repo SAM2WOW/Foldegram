@@ -1,15 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Original Foldegram origami-crane artwork, licensed with this project (GPL-2.0-or-later). -->
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp" android:height="108dp"
-    android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#76AAA8" android:pathData="M 46,61 L 20,74 L 52,69 Z" />
-    <path android:fillColor="#DAEEE6" android:pathData="M 53,65 L 31,28 L 34,55 Z" />
-    <path android:fillColor="#9CC6BE" android:pathData="M 31,28 L 34,55 L 53,65 Z" />
-    <path android:fillColor="#F8F1DF" android:pathData="M 49,64 L 84,44 L 63,74 Z" />
-    <path android:fillColor="#D4DCC6" android:pathData="M 84,44 L 57,66 L 63,74 Z" />
-    <path android:fillColor="#EEF0DA" android:pathData="M 53,65 L 64,57 L 67,40 L 75,33 L 84,37 L 76,40 L 73,46 L 69,67 L 63,74 Z" />
-    <path android:fillColor="#82B7AD" android:pathData="M 64,57 L 67,40 L 75,33 L 70,43 L 68,64 L 63,74 Z" />
-    <path android:fillColor="#E7AD87" android:pathData="M 75,33 L 84,37 L 76,40 Z" />
-    <path android:fillColor="#B4CEC0" android:pathData="M 46,61 L 53,65 L 63,74 L 43,68 Z" />
+<!-- Overrides the upstream light/dark Android 12+ splash. Static approved crane,
+     unchanged paths; navy disc fits the platform two-thirds safe circle. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#152733" android:pathData="M 54,18 A 36,36 0 1,1 54,90 A 36,36 0 1,1 54,18 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M 25.668,42.342 L 32.201,36.432 L 32.978,39.905 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M 32.823,36.380 L 35.726,38.298 L 44.073,56.495 L 39.614,63.857 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M 42.621,51.000 L 50.449,46.386 L 44.643,55.510 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M 51.746,45.712 L 62.011,56.703 L 41.221,63.183 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M 58.537,51.414 L 77.927,31.558 L 66.677,60.643 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M 42.569,63.909 L 62.892,57.636 L 75.646,74.174 Z" />
 </vector>

@@ -7159,12 +7159,12 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     }
 
     private void logWindowLayout(String reason) {
-        if (!BuildVars.LOGS_ENABLED) {
+        if (!org.telegram.messenger.BuildConfig.DEBUG) {
             return;
         }
         final Configuration configuration = getResources().getConfiguration();
         // Geometry and state only: never log account, dialog, message or intent data.
-        FileLog.d("FoldegramWindow event=" + reason
+        android.util.Log.d("FoldegramWindow", "event=" + reason
             + " configDp=" + configuration.screenWidthDp + "x" + configuration.screenHeightDp
             + " smallestDp=" + configuration.smallestScreenWidthDp
             + " displayPx=" + AndroidUtilities.displaySize.x + "x" + AndroidUtilities.displaySize.y

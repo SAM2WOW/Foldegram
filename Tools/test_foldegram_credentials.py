@@ -21,6 +21,8 @@ with tempfile.TemporaryDirectory(prefix="foldegram-config-test-") as directory:
     (app_fixture / 'build.gradle').write_text("""
         tasks.register('compileDebugJavaWithJavac') { dependsOn ':TMessagesProj:packageDebugResources' }
         tasks.register('processDebugMainManifest') {}
+        tasks.register('bundleDebugClassesToCompileJar') {}
+        tasks.register('bundleDebugClassesToRuntimeJar') {}
         tasks.register('packageDebugResources') {}
         ['packageDebug', 'packageDebugAndroidTest', 'validateSigningDebug', 'bundleDebug', 'signDebugBundle'].each { name ->
             tasks.register(name) { doLast { throw new GradleException('Forbidden task actually executed') } }
@@ -47,7 +49,7 @@ with tempfile.TemporaryDirectory(prefix="foldegram-config-test-") as directory:
         ("valid syntax", {"FOLDEGRAM_API_ID": "123456", "FOLDEGRAM_API_HASH": FIXTURE_HASH}, [], True),
         ("explicit setup mode", {}, ["-PfoldegramStubCredentials=true", "assertValidationPlaceholders"], True),
         ("compile-only guard", {}, ["-PfoldegramCompileOnly=true", "assertValidationPlaceholders"], True),
-        ("app Java/manifest, library resources and internal lint AAR allowed", {}, ["-PfoldegramCompileOnly=true", ":TMessagesProj_AppFoldegram:compileDebugJavaWithJavac", ":TMessagesProj_AppFoldegram:processDebugMainManifest", ":TMessagesProj_AppFoldegram:packageDebugResources", ":TMessagesProj:bundleDebugLocalLintAar"], True),
+        ("app Java/manifest, library resources and internal lint AAR allowed", {}, ["-PfoldegramCompileOnly=true", ":TMessagesProj_AppFoldegram:compileDebugJavaWithJavac", ":TMessagesProj_AppFoldegram:processDebugMainManifest", ":TMessagesProj_AppFoldegram:packageDebugResources", ":TMessagesProj_AppFoldegram:bundleDebugClassesToCompileJar", ":TMessagesProj_AppFoldegram:bundleDebugClassesToRuntimeJar", ":TMessagesProj:bundleDebugLocalLintAar"], True),
     ]
     for name, overrides, arguments, expected in cases:
         env = {k: v for k, v in os.environ.items() if not k.startswith("FOLDEGRAM_")}

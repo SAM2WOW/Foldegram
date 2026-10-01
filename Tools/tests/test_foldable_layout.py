@@ -411,7 +411,9 @@ public class WorkspaceRoutingTest {
 
     def test_diagnostics_are_gated_and_content_free(self):
         log = method(LAUNCH, "private void logWindowLayout(String reason)")
-        self.assertIn("if (!BuildVars.LOGS_ENABLED)", log)
+        self.assertIn("if (!org.telegram.messenger.BuildConfig.DEBUG)", log)
+        self.assertIn('android.util.Log.d("FoldegramWindow"', log)
+        self.assertNotIn("FileLog.", log)
         for forbidden in ("getDialogId(", "getTopicId(", "getCurrentUser(", "getIntent(", "messageText", "currentAccount"):
             self.assertNotIn(forbidden, log)
 

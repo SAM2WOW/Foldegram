@@ -153,12 +153,8 @@ public class IntroActivity extends BaseFragment implements NotificationCenter.No
 
     @Override
     public View createView(Context context) {
-        logoDrawable = context.getResources().getDrawable(R.drawable.telegram_logo).mutate();
-        logoDrawable.setBounds(0, dp(8.666f), dp(115), dp(35));
-        SpannableStringBuilder ssb = new SpannableStringBuilder(LocaleController.getString(R.string.Page1Title));
-        ssb.setSpan(new ImageSpan(logoDrawable), 0, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        titles[0] = ssb;
-
+        logoDrawable = context.getResources().getDrawable(R.drawable.foldegram_crane_mark).mutate();
+        titles[0] = LocaleController.getString(R.string.AppName);
 
         actionBar.setAddToContainer(false);
 
@@ -249,6 +245,12 @@ public class IntroActivity extends BaseFragment implements NotificationCenter.No
 
         TextureView textureView = new TextureView(context);
         frameLayout2.addView(textureView, LayoutHelper.createFrame(ICON_WIDTH_DP, ICON_HEIGHT_DP, Gravity.CENTER));
+        textureView.setVisibility(View.GONE);
+        android.widget.ImageView crane = new android.widget.ImageView(context);
+        crane.setImageDrawable(logoDrawable);
+        crane.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+        crane.setContentDescription(LocaleController.getString(R.string.AppName));
+        frameLayout2.addView(crane, LayoutHelper.createFrame(150, 150, Gravity.CENTER));
         textureView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
             @Override
             public void onSurfaceTextureAvailable(@NonNull SurfaceTexture surface, int width, int height) {
@@ -962,7 +964,7 @@ public class IntroActivity extends BaseFragment implements NotificationCenter.No
 
     private void updateColors(boolean fromTheme) {
         startMessagingButtonBackground.setColors(new int[]{getThemedColor(Theme.key_featuredStickers_addButton), getThemedColor(Theme.key_featuredStickers_addButton2)});
-        logoDrawable.setColorFilter(Theme.multAlpha(getThemedColor(Theme.key_actionBarDefaultTitle), 0.9f), PorterDuff.Mode.MULTIPLY);
+        logoDrawable.setColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteBlueText4), PorterDuff.Mode.SRC_IN);
         fragmentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
         switchLanguageTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
         startMessagingButton.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText));

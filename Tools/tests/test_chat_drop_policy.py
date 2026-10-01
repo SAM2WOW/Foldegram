@@ -31,7 +31,7 @@ import java.util.ArrayList;
 
 public class DropPolicyRegressionTest {
     static final int MAX_TEXT_LENGTH = 16384;
-    static final long MAX_IMAGE_BYTES = 20L * 1024 * 1024;
+    static final long MAX_IMAGE_BYTES = 100L * 1024 * 1024;
     static final long MAX_IMAGE_PIXELS = 32L * 1024 * 1024;
     __CLASSIFIER_METHODS__
 
@@ -60,11 +60,20 @@ public class DropPolicyRegressionTest {
         boolean noforwards;
     }
     static class MessageObject {
-        static final int TYPE_TEXT = 0, TYPE_PHOTO = 1;
+        static final int TYPE_TEXT=0, TYPE_PHOTO=1, TYPE_VOICE=2, TYPE_VIDEO=3, TYPE_GEO=4, TYPE_ROUND_VIDEO=5, TYPE_GIF=8, TYPE_FILE=9, TYPE_CONTACT=12, TYPE_STICKER=13, TYPE_MUSIC=14, TYPE_ANIMATED_STICKER=15, TYPE_POLL=17, TYPE_EMOJIS=19;
         Message messageOwner = new Message();
         int currentAccount = 1, id = 10, type;
         long dialog = 2, group;
         boolean sent = true, editing, canForward = true, sponsored, ephemeral, secretMedia, blurred, sensitive, paidProtected;
+        boolean isSticker() { return type == 13; }
+        boolean isAnimatedSticker() { return type == 15; }
+        boolean isGif() { return type == 8; }
+        boolean isRoundVideo() { return type == 5; }
+        boolean isVoice() { return type == 2; }
+        boolean isMusic() { return type == 14; }
+        boolean isVideo() { return type == 3; }
+        boolean isPoll() { return type == 17; }
+        Object getDocument() { return type == 9 ? new Object() : null; }
         int getId() { return id; }
         long getDialogId() { return dialog; }
         long getGroupId() { return group; }
@@ -83,7 +92,7 @@ public class DropPolicyRegressionTest {
         boolean isFrozen() { return frozen; }
         boolean isPeerNoForwards(long dialog) { return sourceProtected; }
     }
-    static class Chat { boolean left, writable = true, photo = true, plain = true, manageTopic; }
+    static class Chat { boolean left, writable = true, photo = true, plain = true, media = true, manageTopic; }
     static class Topic { boolean closed; }
     static class User { boolean deleted, replyUser; }
     static class UserObject {
@@ -95,6 +104,13 @@ public class DropPolicyRegressionTest {
         static boolean isNotInChat(Chat chat) { return chat.left; }
         static boolean canWriteToChat(Chat chat) { return chat.writable; }
         static boolean canSendPhoto(Chat chat) { return chat.photo; }
+        static boolean canSendStickers(Chat chat) { return chat.media; }
+        static boolean canSendRoundVideo(Chat chat) { return chat.media; }
+        static boolean canSendVoice(Chat chat) { return chat.media; }
+        static boolean canSendMusic(Chat chat) { return chat.media; }
+        static boolean canSendVideo(Chat chat) { return chat.media; }
+        static boolean canSendDocument(Chat chat) { return chat.media; }
+        static boolean canSendPolls(Chat chat) { return chat.media; }
         static boolean canSendPlain(Chat chat) { return chat.plain; }
         static boolean canManageTopic(int account, Chat chat, Topic topic) { return chat != null && chat.manageTopic; }
     }
@@ -150,6 +166,11 @@ public class DropPolicyRegressionTest {
     static void check(boolean value, String why) { if (!value) throw new AssertionError(why); }
     static void resetGlobals() { Build.VERSION.SDK_INT = 36; SharedConfig.appLocked = false; SharedConfig.isWaitingForPasscodeEnter = false; }
     static void classifier() {
+        check("Shared file".equals(safeDisplayName("..")), "traversal basename rejected");
+        check(!safeDisplayName("../a\\b\n\u202efile.pdf").contains("/"), "path separators removed");
+        check(!safeDisplayName("a\u202eb").contains("\u202e"), "bidi controls removed");
+        check(safeDisplayName(new String(new char[200])).length() <= 120, "filename bound");
+        check(isSupportedItemCount(10) && !isSupportedItemCount(0) && !isSupportedItemCount(11), "bounded multi-item drops");
         check(isSingleItem(1) && !isSingleItem(0) && !isSingleItem(2), "single item only");
         check(isSupportedTextItem(true, "hello", null), "plain text");
         check(isSupportedTextItem(true, "https://example.org", "https"), "text URL");
@@ -179,9 +200,10 @@ public class DropPolicyRegressionTest {
         chat.controller.sourceProtected = true; check(!chat.canDragFoldegramMessage(message), "live source permission recheck"); chat.controller.sourceProtected = false;
         chat.secret = true; check(!chat.canDragFoldegramMessage(message), "secret source"); chat.secret = false;
         message.secretMedia = true; check(!chat.canDragFoldegramMessage(message), "secret media"); message.secretMedia = false;
-        message.group = 9; check(!chat.canDragFoldegramMessage(message), "albums excluded"); message.group = 0;
+        message.group = 9; check(chat.canDragFoldegramMessage(message), "album item forwardable"); message.group = 0;
         message.sensitive = true; check(!chat.canDragFoldegramMessage(message), "sensitive media"); message.sensitive = false;
-        message.type = 3; check(!chat.canDragFoldegramMessage(message), "unsupported message type"); message.type = 0;
+        message.type = 3; check(chat.canDragFoldegramMessage(message), "video forwardable"); message.type = 0;
+        message.type = 29; check(!chat.canDragFoldegramMessage(message), "paid-media payload excluded"); message.type = 1234; check(!chat.canDragFoldegramMessage(message), "unknown protocol payload excluded"); message.type = 0;
         message.id = -1; check(!chat.canDragFoldegramMessage(message), "unsent message"); message.id = 10;
         message.currentAccount = 2; check(!chat.canDragFoldegramMessage(message), "source account mismatch"); message.currentAccount = 1;
         SharedConfig.appLocked = true; check(!chat.canDragFoldegramMessage(message), "locked source"); resetGlobals();
@@ -223,6 +245,19 @@ public class DropPolicyRegressionTest {
         message.dialog = chat.dialog_id; check(!chat.stageFoldegramForward(message), "same dialog forward blocked"); message.dialog = 2;
         chat.currentChat = new Chat(); chat.currentChat.plain = false; check(!chat.stageFoldegramText("bad", 100), "plain text banned");
         check(!chat.stageFoldegramForward(message), "text forward banned");
+        chat.currentChat.media = false;
+        for (int type : new int[]{2, 3, 5, 8, 9, 13, 14, 15, 17}) {
+            message.type = type;
+            check(!chat.stageFoldegramForward(message), "media-specific permission blocks " + type);
+        }
+        chat.currentChat.media = true;
+        for (int type : new int[]{2, 3, 5, 8, 9, 13, 14, 15, 17}) {
+            message.type = type;
+            check(chat.stageFoldegramForward(message), "forward preview supports " + type);
+        }
+        ArrayList<MessageObject> album = new ArrayList<>(); album.add(message);
+        MessageObject protectedItem = new MessageObject(); protectedItem.messageOwner.noforwards = true; album.add(protectedItem);
+        check(!chat.stageFoldegramForwards(album), "protected album member rejects whole drop");
         ImportOwner imports = new ImportOwner(); Import importing = new Import(); imports.imageImport = importing;
         imports.cancelImport(); check(importing.cancelled && imports.imageImport == null, "pending URI import canceled and detached");
         imports.cancelImport();
@@ -237,12 +272,12 @@ public class DropPolicyRegressionTest {
 
 class DropPolicyTest(unittest.TestCase):
     def test_extracted_production_logic(self):
-        classifier_names = ["isWithinImageCopyLimit", "isSingleItem", "isSupportedTextItem", "isSupportedImageDimensions", "isSupportedImage"]
-        classifier = "\n".join(method(DROP, "private static boolean " + name + "(") for name in classifier_names)
+        classifier_names = ["isSupportedItemCount", "isWithinImageCopyLimit", "isSingleItem", "isSupportedTextItem", "isSupportedImageDimensions", "isSupportedImage"]
+        classifier = "\n".join(method(DROP, "private static boolean " + name + "(") for name in classifier_names) + "\n" + method(DROP, "private static String safeDisplayName(")
         chat_signatures = [
-            "boolean canDragFoldegramMessage(", "boolean canAcceptFoldegramDrop(", "boolean canReceiveFoldegramDrag(",
+            "private static boolean isSupportedFoldegramMessageType(", "boolean canDragFoldegramMessage(", "boolean canAcceptFoldegramDrop(", "boolean canReceiveFoldegramDrag(",
             "private boolean hasFoldegramCompositionConflict(", "boolean canStageFoldegramMedia(",
-            "boolean stageFoldegramText(", "boolean stageFoldegramForward(",
+            "boolean stageFoldegramText(", "boolean stageFoldegramForward(", "boolean stageFoldegramForwards(", "private boolean canSendFoldegramMessage(",
         ]
         chat_methods = "\n".join(method(CHAT, signature) for signature in chat_signatures)
         java = HARNESS.replace("__CLASSIFIER_METHODS__", classifier).replace("__CHAT_METHODS__", chat_methods).replace("__CANCEL_IMPORT__", method(DROP, "void cancelImport("))
@@ -252,14 +287,15 @@ class DropPolicyTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "DropPolicyRegressionTest.java"
             source.write_text(java)
-            subprocess.run([javac, str(source)], check=True, capture_output=True, text=True)
+            compiled = subprocess.run([javac, str(source)], capture_output=True, text=True)
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
             result = subprocess.run([str(Path(javac).with_name("java")), "-cp", directory, "DropPolicyRegressionTest"], check=True, capture_output=True, text=True)
             self.assertIn("PASS:", result.stdout)
 
     def test_no_automatic_send_and_lifecycle_hooks(self):
         self.assertNotIn("sendMedia(", DROP)
         self.assertNotIn("sendMessage(", DROP)
-        forward = method(CHAT, "boolean stageFoldegramForward(")
+        forward = method(CHAT, "boolean stageFoldegramForwards(")
         self.assertIn("showFieldPanelForForward(true, messages)", forward)
         self.assertNotIn("forwardMessages(", forward)
         image = method(CHAT, "void stageFoldegramImage(")
@@ -277,6 +313,16 @@ class DropPolicyTest(unittest.TestCase):
         self.assertIn("item.getIntent() != null", DROP)
         self.assertIn("UUID.randomUUID()", DROP)
         self.assertNotIn("takePersistableUriPermission", DROP)
+        dispatch = method(CHAT, "public boolean dispatchDragEvent(")
+        self.assertIn("foldegramDropSurface.dispatchDragEvent(event)", dispatch)
+        self.assertIn("foldegramDropSurface.setOnDragListener", CHAT)
+        self.assertIn("canStartMessageDrag(owner)", DROP)
+        self.assertIn("null, 0)", DROP)
+        self.assertNotIn("View.DRAG_FLAG_GLOBAL", DROP)
+        files = method(CHAT, "void stageFoldegramFiles(")
+        self.assertLess(files.index("builder.setPositiveButton"), files.index("prepareSendingDocuments"))
+        self.assertIn("ensurePaidMessageConfirmation", files)
+        self.assertIn("foldegramPendingFiles != droppedFiles", files)
 
 
 if __name__ == "__main__":

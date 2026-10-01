@@ -3600,7 +3600,8 @@ public class NotificationsController extends BaseController implements Notificat
             String id = "ndid_" + did;
 
             Intent shortcutIntent = new Intent(ApplicationLoader.applicationContext, OpenChatReceiver.class);
-            shortcutIntent.setAction("com.tmessages.openchat" + Math.random() + Integer.MAX_VALUE);
+            shortcutIntent.setAction("com.tmessages.openchat.shortcut." + currentAccount + "." + did);
+            shortcutIntent.putExtra("currentAccount", currentAccount);
             if (did > 0) {
                 shortcutIntent.putExtra("userId", did);
             } else {
@@ -3627,7 +3628,7 @@ public class NotificationsController extends BaseController implements Notificat
             ShortcutManagerCompat.pushDynamicShortcut(ApplicationLoader.applicationContext, shortcut);
             builder.setShortcutInfo(shortcut);
             Intent intent = new Intent(ApplicationLoader.applicationContext, BubbleActivity.class);
-            intent.setAction("com.tmessages.openchat" + Math.random() + Integer.MAX_VALUE);
+            intent.setAction("com.tmessages.openchat.bubble." + currentAccount + "." + did);
             if (DialogObject.isUserDialog(did)) {
                 intent.putExtra("userId", did);
             } else {
@@ -3650,7 +3651,7 @@ public class NotificationsController extends BaseController implements Notificat
                                 icon);
                 bubbleBuilder.setSuppressNotification(openedDialogId == did);
                 bubbleBuilder.setAutoExpandBubble(false);
-                bubbleBuilder.setDesiredHeight(AndroidUtilities.dp(640));
+                bubbleBuilder.setDesiredHeight(640); // BubbleMetadata takes dp, not physical pixels.
                 builder.setBubbleMetadata(bubbleBuilder.build());
             } else {
                 builder.setBubbleMetadata(null);

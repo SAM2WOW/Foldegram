@@ -4442,6 +4442,10 @@ public class LocaleController {
 
     @Nullable
     private String getStringV2(String key, @StringRes int stringRes, String fallback) {
+        return FoldegramBranding.clientLabel(key, stringRes, getServiceStringV2(key, stringRes, fallback));
+    }
+
+    private String getServiceStringV2(String key, @StringRes int stringRes, String fallback) {
         final Context context = ApplicationLoader.applicationContext;
         String value;
 

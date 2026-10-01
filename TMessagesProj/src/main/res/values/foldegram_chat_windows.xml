@@ -6,4 +6,5 @@
     <string name="FoldegramChangeActiveChat">Change the active conversation</string>
     <string name="FoldegramFocusChat">Focus conversation %1$d: %2$s</string>
     <string name="FoldegramFinishComposition">Finish or cancel your edit, recording, attachment, or forwarding preview before opening two chats</string>
+    <string name="FoldegramIntroBody">An unofficial Telegram client with a two-chat workspace. Built from Telegram open-source software.</string>
 </resources>

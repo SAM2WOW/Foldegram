@@ -44,6 +44,8 @@ public class BubbleActivity extends BasePermissionsActivity implements INavigati
     public static BubbleActivity instance;
 
     private boolean finished;
+    private boolean activityResumed;
+    private boolean layoutResumed;
     private final ArrayList<BaseFragment> mainFragmentsStack = new ArrayList<>();
 
     private PasscodeView passcodeView;
@@ -102,10 +104,16 @@ public class BubbleActivity extends BasePermissionsActivity implements INavigati
         actionBarLayout.setFragmentStack(mainFragmentsStack);
         actionBarLayout.setDelegate(this);
 
-        passcodeView = new PasscodeView(this);
+        passcodeView = new PasscodeView(this) {
+            @Override protected void onHidden() {
+                if (!finished && !SharedConfig.appLocked && !SharedConfig.isWaitingForPasscodeEnter) {
+                    actionBarLayout.getView().setVisibility(View.VISIBLE);
+                    resumeLayout();
+                }
+            }
+        };
         drawerLayoutContainer.addView(passcodeView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
-        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.closeOtherAppActivities, this);
 
         actionBarLayout.removeAllFragments();
 
@@ -117,6 +125,8 @@ public class BubbleActivity extends BasePermissionsActivity implements INavigati
         if (passcodeView == null) {
             return;
         }
+        pauseLayout();
+        actionBarLayout.getView().setVisibility(View.INVISIBLE);
         SharedConfig.appLocked = true;
         if (SecretMediaViewer.hasInstance() && SecretMediaViewer.getInstance().isVisible()) {
             SecretMediaViewer.getInstance().closePhoto(false, false);
@@ -133,7 +143,7 @@ public class BubbleActivity extends BasePermissionsActivity implements INavigati
                 handleIntent(passcodeSaveIntent, passcodeSaveIntentIsNew, passcodeSaveIntentIsRestore, true, passcodeSaveIntentAccount, passcodeSaveIntentState);
                 passcodeSaveIntent = null;
             }
-            actionBarLayout.showLastFragment();
+            // onHidden resumes only after the passcode overlay finishes leaving.
 
             NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.passcodeDismissed, view);
         });
@@ -150,7 +160,12 @@ public class BubbleActivity extends BasePermissionsActivity implements INavigati
             UserConfig.getInstance(intentAccount).saveConfig(false);
             return false;
         }
-        currentAccount = intent.getIntExtra("currentAccount", UserConfig.selectedAccount);
+        if (intent == null) { finish(); return false; }
+        int nextAccount = intent.getIntExtra("currentAccount", UserConfig.selectedAccount);
+        if (!UserConfig.isValidAccount(nextAccount)) { finish(); return false; }
+        pauseLayout();
+        clearOpenedBubble();
+        currentAccount = nextAccount;
         if (!UserConfig.isValidAccount(currentAccount)) {
             finish();
             return false;
@@ -177,17 +192,22 @@ public class BubbleActivity extends BasePermissionsActivity implements INavigati
         }
         NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.closeChats, dialogId);
         actionBarLayout.removeAllFragments();
-        actionBarLayout.addFragmentToStack(chatActivity);
+        if (!actionBarLayout.addFragmentToStack(chatActivity)) { finish(); return false; }
         AccountInstance.getInstance(currentAccount).getNotificationsController().setOpenedInBubble(dialogId, true);
         AccountInstance.getInstance(currentAccount).getConnectionsManager().setAppPaused(false, false);
         actionBarLayout.showLastFragment();
-
+        // Mounting resumes fragments internally; reconcile with the actual Activity/passcode state.
+        actionBarLayout.onPause();
+        layoutResumed = false;
+        resumeLayout();
+        actionBarLayout.getView().requestLayout();
         return true;
     }
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        setIntent(intent);
         handleIntent(intent, true, false, false, UserConfig.selectedAccount, 0);
     }
 
@@ -200,7 +220,7 @@ public class BubbleActivity extends BasePermissionsActivity implements INavigati
             lockRunnable = null;
         }
         finished = true;
-        instance = null;
+        if (instance == this) instance = null;
     }
 
     public void presentFragment(BaseFragment fragment) {
@@ -214,24 +234,44 @@ public class BubbleActivity extends BasePermissionsActivity implements INavigati
     @Override
     protected void onPause() {
         super.onPause();
-        actionBarLayout.onPause();
+        activityResumed = false;
+        pauseLayout();
         ApplicationLoader.externalInterfacePaused = true;
         onPasscodePause();
         if (passcodeView != null) {
             passcodeView.onPause();
         }
-        instance = null;
+        if (instance == this) instance = null;
+    }
+
+    private void clearOpenedBubble() {
+        if (UserConfig.isValidAccount(currentAccount) && dialogId != 0) {
+            AccountInstance.getInstance(currentAccount).getNotificationsController().setOpenedInBubble(dialogId, false);
+        }
+    }
+
+    private void pauseLayout() {
+        if (layoutResumed && actionBarLayout != null) actionBarLayout.onPause();
+        layoutResumed = false;
+    }
+
+    private void resumeLayout() {
+        if (!finished && activityResumed && !layoutResumed && actionBarLayout != null
+                && !mainFragmentsStack.isEmpty() && !SharedConfig.appLocked && !SharedConfig.isWaitingForPasscodeEnter
+                && passcodeView.getVisibility() != View.VISIBLE) {
+            actionBarLayout.onResume();
+            layoutResumed = true;
+        }
     }
 
     @Override
     protected void onDestroy() {
-        super.onDestroy();
-        if (currentAccount != -1) {
-            AccountInstance.getInstance(currentAccount).getNotificationsController().setOpenedInBubble(dialogId, false);
-            AccountInstance.getInstance(currentAccount).getConnectionsManager().setAppPaused(false, false);
-        }
+        activityResumed = false;
+        pauseLayout();
+        clearOpenedBubble();
+        if (actionBarLayout != null) actionBarLayout.removeAllFragments();
         onFinish();
-        instance = null;
+        super.onDestroy();
     }
 
     @Override
@@ -263,15 +303,16 @@ public class BubbleActivity extends BasePermissionsActivity implements INavigati
     @Override
     protected void onResume() {
         super.onResume();
-        actionBarLayout.onResume();
+        activityResumed = true;
         ApplicationLoader.externalInterfacePaused = false;
         onPasscodeResume();
-        if (passcodeView.getVisibility() != View.VISIBLE) {
-            actionBarLayout.onResume();
-        } else {
+        if (passcodeView.getVisibility() == View.VISIBLE) {
             actionBarLayout.dismissDialogs();
             passcodeView.onResume();
+        } else {
+            resumeLayout();
         }
+        actionBarLayout.getView().requestLayout();
         instance = this;
     }
 
@@ -330,6 +371,9 @@ public class BubbleActivity extends BasePermissionsActivity implements INavigati
         AndroidUtilities.checkDisplaySize(this, newConfig);
         AndroidUtilities.setPreferredMaxRefreshRate(getWindow());
         super.onConfigurationChanged(newConfig);
+        // ViewRoot delivers configuration to the layout; only invalidate stale geometry here.
+        actionBarLayout.getView().requestLayout();
+        actionBarLayout.getView().invalidate();
     }
 
     @Override

@@ -1342,14 +1342,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             if (fragmentStack.size() >= 2) {
                 for (int a = 1; a < fragmentStack.size(); a++) {
                     BaseFragment chatFragment = fragmentStack.get(a);
-                    if (chatFragment instanceof ChatActivity) {
-                        ((ChatActivity) chatFragment).setIgnoreAttachOnPause(true);
-                    }
-                    chatFragment.onPause();
-                    chatFragment.onFragmentDestroy();
-                    chatFragment.setParentLayout(null);
-                    fragmentStack.remove(chatFragment);
-                    rightActionBarLayout.addFragmentToStack(chatFragment);
+                    moveWindowFragment(chatFragment, fragmentStack, rightActionBarLayout);
                     a--;
                 }
                 if (passcodeDialog == null || passcodeDialog.passcodeView.getVisibility() != View.VISIBLE) {
@@ -1365,14 +1358,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             if (!fragmentStack.isEmpty()) {
                 for (int a = 0; a < fragmentStack.size(); a++) {
                     BaseFragment chatFragment = fragmentStack.get(a);
-                    if (chatFragment instanceof ChatActivity) {
-                        ((ChatActivity) chatFragment).setIgnoreAttachOnPause(true);
-                    }
-                    chatFragment.onPause();
-                    chatFragment.onFragmentDestroy();
-                    chatFragment.setParentLayout(null);
-                    fragmentStack.remove(chatFragment);
-                    actionBarLayout.addFragmentToStack(chatFragment);
+                    moveWindowFragment(chatFragment, fragmentStack, actionBarLayout);
                     a--;
                 }
                 if (passcodeDialog == null || passcodeDialog.passcodeView.getVisibility() != View.VISIBLE) {
@@ -1382,6 +1368,24 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             rightActionBarLayout.getView().setVisibility(View.GONE);
             backgroundTablet.setVisibility(!actionBarLayout.getFragmentStack().isEmpty() ? View.GONE : View.VISIBLE);
         }
+    }
+
+    private void moveWindowFragment(BaseFragment fragment, List<BaseFragment> source, INavigationLayout destination) {
+        // Moving between panes is not the end of this fragment's lifetime. In particular,
+        // onFragmentDestroy permanently sets isFinished and cancels requests/observers.
+        // Pause normally so the current draft is saved before its view is rebuilt.
+        if (!fragment.isPaused()) {
+            fragment.onPause();
+        }
+        if (fragment.getFragmentView() != null) {
+            fragment.onBecomeFullyHidden();
+        }
+        fragment.setParentLayout(null);
+        source.remove(fragment);
+        // addFragmentToStack calls onFragmentCreate again; these are already-created
+        // instances. Reparent the live stack entry and rebuild once after the migration.
+        destination.getFragmentStack().add(fragment);
+        fragment.setParentLayout(destination);
     }
 
     private void showUpdateActivity(int account, TLRPC.TL_help_appUpdate update, boolean check) {
@@ -8800,6 +8804,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     }
 
     public static BaseFragment getLastFragment() {
+        if (FoldegramChatWindowActivity.ownsForeground()) {
+            return FoldegramChatWindowActivity.getActiveFragment();
+        }
         if (BubbleActivity.instance != null && BubbleActivity.instance.actionBarLayout != null) {
             return BubbleActivity.instance.actionBarLayout.getLastFragment();
         }
@@ -8814,6 +8821,10 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     // last fragment that is not finishing itself
     public static <T extends BaseFragment> T findFragment(Class<T> clazz) {
+        if (FoldegramChatWindowActivity.ownsForeground()) {
+            BaseFragment active = FoldegramChatWindowActivity.getActiveFragment();
+            return active == null || active.getParentLayout() == null ? null : active.getParentLayout().findFragment(clazz);
+        }
         if (BubbleActivity.instance != null && BubbleActivity.instance.actionBarLayout != null) {
             return BubbleActivity.instance.actionBarLayout.findFragment(clazz);
         }
@@ -8828,6 +8839,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     // last fragment that is not finishing itself
     public static BaseFragment getSafeLastFragment() {
+        if (FoldegramChatWindowActivity.ownsForeground()) {
+            return FoldegramChatWindowActivity.getActiveFragment();
+        }
         if (BubbleActivity.instance != null && BubbleActivity.instance.actionBarLayout != null) {
             return BubbleActivity.instance.actionBarLayout.getSafeLastFragment();
         }

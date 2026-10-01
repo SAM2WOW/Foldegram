@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="FoldegramChooseDifferentChat">Choose a different conversation for the other pane</string>
+    <string name="FoldegramReopenChats">This conversation is unavailable. Reopen it from your chat list and try again.</string>
+    <string name="FoldegramCloseTwoChats">Close two-chat workspace</string>
+    <string name="FoldegramChangeActiveChat">Change the active conversation</string>
+    <string name="FoldegramFocusChat">Focus conversation %1$d: %2$s</string>
+    <string name="FoldegramFinishComposition">Finish or cancel your edit, recording, attachment, or forwarding preview before opening two chats</string>
+</resources>

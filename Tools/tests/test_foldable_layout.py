@@ -67,9 +67,22 @@ public class FoldableLayoutRegressionTest {
     static class ViewCompat { static void requestApplyInsets(View v) {} }
     static class PasscodeDialog { View passcodeView = new View(); }
     static class BaseFragment {
-        void onPause() {}
-        void onFragmentDestroy() {}
-        void setParentLayout(Object v) {}
+        boolean finished, paused = true;
+        int creates = 1, destroys, pauses, resumes, hidden;
+        Object parent;
+        final View fragmentView = new View();
+        void onFragmentCreate() { creates++; }
+        void onPause() { paused = true; pauses++; }
+        void onResume() {
+            check(!finished, "a destroyed fragment must not be resumed");
+            paused = false;
+            resumes++;
+        }
+        boolean isPaused() { return paused; }
+        View getFragmentView() { return fragmentView; }
+        void onBecomeFullyHidden() { hidden++; }
+        void onFragmentDestroy() { finished = true; destroys++; }
+        void setParentLayout(Object v) { parent = v; }
     }
     static class DialogsActivity extends BaseFragment {
         boolean isMainDialogList() { return true; }
@@ -81,7 +94,13 @@ public class FoldableLayoutRegressionTest {
         DialogsActivity getDialogsActivity() { return new DialogsActivity(); }
     }
     static class ChatActivity extends BaseFragment {
-        void setIgnoreAttachOnPause(boolean ignored) {}
+        boolean ignoreAttachOnPause;
+        String draft = "unsent draft", savedDraft;
+        void setIgnoreAttachOnPause(boolean ignored) { ignoreAttachOnPause = ignored; }
+        @Override void onPause() {
+            super.onPause();
+            savedDraft = ignoreAttachOnPause ? null : draft;
+        }
         boolean isInScheduleMode() { return false; }
         long getDialogId() { return 1; }
         long getTopicId() { return 0; }
@@ -93,8 +112,17 @@ public class FoldableLayoutRegressionTest {
         int rebuilds;
         INavigationLayout(List<BaseFragment> stack) { this.stack = stack; }
         List<BaseFragment> getFragmentStack() { return stack; }
-        void addFragmentToStack(BaseFragment f) { stack.add(f); }
-        void rebuildFragments(int flags) { rebuilds++; }
+        void addFragmentToStack(BaseFragment f) {
+            f.onFragmentCreate();
+            f.setParentLayout(this);
+            stack.add(f);
+            f.onResume();
+        }
+        void rebuildFragments(int flags) {
+            rebuilds++;
+            for (BaseFragment f : stack) f.setParentLayout(this);
+            if (!stack.isEmpty()) stack.get(stack.size() - 1).onResume();
+        }
         View getView() { return view; }
     }
     static class AndroidUtilities {
@@ -194,7 +222,7 @@ public class FoldableLayoutRegressionTest {
         LaunchActivity a = freshPhone();
         a.resources.tablet = true;
         a.refreshWindowLayout("unfold");
-        BaseFragment chat = a.rightFragmentsStack.get(0);
+        ChatActivity chat = (ChatActivity) a.rightFragmentsStack.get(0);
         a.multiWindow = true;
         a.refreshWindowLayout("splitScreen");
         check(a.tabletFullSize, "multi-window uses a single full-width pane");
@@ -207,6 +235,10 @@ public class FoldableLayoutRegressionTest {
         expectStackSizes(a, 1, 1, 1);
         check(a.rightFragmentsStack.get(0) == chat, "same chat returns to right pane");
         check(a.rightActionBarLayout.view.visibility == View.VISIBLE, "populated right pane visible");
+        check(!chat.finished && chat.destroys == 0 && chat.creates == 1,
+                "pane migration must preserve the live fragment lifecycle");
+        check(chat.draft.equals(chat.savedDraft), "pane migration must save the unsent draft");
+        check(chat.parent == a.rightActionBarLayout, "migrated fragment belongs to its destination layout");
     }
     static void smallTabletRotationMovesChatAndBack() {
         LaunchActivity a = freshPhone();
@@ -259,6 +291,7 @@ class FoldableLayoutTests(unittest.TestCase):
         launch_methods = [
             "private void invalidateTabletMode()",
             "private void checkLayout()",
+            "private void moveWindowFragment(BaseFragment fragment, List<BaseFragment> source, INavigationLayout destination)",
             "private void refreshWindowLayout(String reason)",
             "private void updateWindowConfiguration(Configuration configuration)",
             "private void reconcileWindowLayout(String reason)",
@@ -291,6 +324,85 @@ class FoldableLayoutTests(unittest.TestCase):
         self.assertNotIn("checkLayout()", measure.replace("// checkLayout()", "//"))
         self.assertIn("Math.min(width, AndroidUtilities.getTabletLeftFragmentSize", measure)
         self.assertIn("Math.max(0, height - insets.top - insets.bottom - dp(16))", measure)
+
+    def test_pane_migration_preserves_lifetime_and_drafts(self):
+        move = method(LAUNCH, "private void moveWindowFragment(BaseFragment fragment, List<BaseFragment> source, INavigationLayout destination)")
+        code = "\n".join(line for line in move.splitlines() if not line.strip().startswith("//"))
+        self.assertNotIn("onFragmentDestroy(", code)
+        self.assertNotIn("addFragmentToStack(", code)
+        self.assertNotIn("setIgnoreAttachOnPause", code)
+        self.assertIn("fragment.onPause()", code)
+        self.assertIn("fragment.onBecomeFullyHidden()", code)
+        self.assertIn("fragment.setParentLayout(destination)", code)
+
+    def test_foreground_workspace_routes_fragment_lookups(self):
+        harness = r"""
+import java.util.ArrayList;
+public class WorkspaceRoutingTest {
+    static class BaseFragment {
+        Layout parent;
+        Layout getParentLayout() { return parent; }
+    }
+    static class ChatFragment extends BaseFragment {}
+    static class Layout {
+        BaseFragment top;
+        Layout(BaseFragment fragment) { top = fragment; fragment.parent = this; }
+        BaseFragment getLastFragment() { return top; }
+        BaseFragment getSafeLastFragment() { return top; }
+        <T extends BaseFragment> T findFragment(Class<T> clazz) { return clazz.isInstance(top) ? clazz.cast(top) : null; }
+    }
+    static class BubbleActivity {
+        static BubbleActivity instance;
+        Layout actionBarLayout;
+    }
+    static class FoldegramChatWindowActivity {
+        static boolean foreground;
+        static BaseFragment active;
+        static boolean ownsForeground() { return foreground; }
+        static BaseFragment getActiveFragment() { return active; }
+    }
+    static class LaunchActivity {
+        static LaunchActivity instance;
+        final ArrayList<Layout> sheetFragmentsStack = new ArrayList<>();
+        Layout layout;
+        Layout getActionBarLayout() { return layout; }
+        // ACTUAL_ROUTING_METHODS
+    }
+    static void check(boolean condition, String message) {
+        if (!condition) throw new AssertionError(message);
+    }
+    public static void main(String[] args) {
+        BaseFragment original = new ChatFragment();
+        ChatFragment workspace = new ChatFragment();
+        LaunchActivity.instance = new LaunchActivity();
+        LaunchActivity.instance.layout = new Layout(original);
+        new Layout(workspace);
+        check(LaunchActivity.getLastFragment() == original, "normal launch routing");
+        FoldegramChatWindowActivity.foreground = true;
+        FoldegramChatWindowActivity.active = workspace;
+        check(LaunchActivity.getLastFragment() == workspace, "foreground workspace target");
+        check(LaunchActivity.getSafeLastFragment() == workspace, "foreground safe target");
+        check(LaunchActivity.findFragment(ChatFragment.class) == workspace, "search active pane only");
+        FoldegramChatWindowActivity.active = null;
+        check(LaunchActivity.getLastFragment() == null, "locked workspace cannot fall back to hidden original");
+        check(LaunchActivity.getSafeLastFragment() == null, "locked safe lookup");
+        check(LaunchActivity.findFragment(ChatFragment.class) == null, "locked search");
+        FoldegramChatWindowActivity.foreground = false;
+        check(LaunchActivity.getLastFragment() == original, "closed workspace restores launch routing");
+    }
+}
+"""
+        signatures = [
+            "public static BaseFragment getLastFragment()",
+            "public static <T extends BaseFragment> T findFragment(Class<T> clazz)",
+            "public static BaseFragment getSafeLastFragment()",
+        ]
+        source = harness.replace("// ACTUAL_ROUTING_METHODS", "\n".join(method(LAUNCH, signature) for signature in signatures))
+        with tempfile.TemporaryDirectory(prefix="foldegram-routing-test-") as tmp:
+            java_file = Path(tmp) / "WorkspaceRoutingTest.java"
+            java_file.write_text(source)
+            subprocess.run(["javac", str(java_file)], check=True, capture_output=True, text=True)
+            subprocess.run(["java", "-cp", tmp, "WorkspaceRoutingTest"], check=True, capture_output=True, text=True)
 
     def test_derived_sizes_are_invalidated(self):
         display = method(UTILITIES, "public static void checkDisplaySize(Context context, Configuration newConfiguration)")

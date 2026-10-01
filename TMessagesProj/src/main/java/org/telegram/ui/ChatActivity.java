@@ -83,6 +83,7 @@ import android.util.Property;
 import android.util.SparseArray;
 import android.util.SparseIntArray;
 import android.util.TypedValue;
+import android.view.DragEvent;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
@@ -432,6 +433,9 @@ public class ChatActivity extends BaseFragment implements
 
     private ChatActivityFadeView chatActivityFadeView;
     protected ChatActivityEnterView chatActivityEnterView;
+    private FoldegramChatDragDrop foldegramDragDrop;
+    private File foldegramPreviewImage;
+    private boolean foldegramImagePreviewOpen;
     private ChatActivityEnterTopView chatActivityEnterTopView;
     private ChatReplyContainer replyLayout;
     private int chatActivityEnterViewAnimateFromTop;
@@ -1247,6 +1251,7 @@ public class ChatActivity extends BaseFragment implements
 
     public final static int OPTION_VIEW_STATISTICS = 115;
     public final static int OPTION_WELCOME_REVERT = 116;
+    private final static int OPTION_FOLDEGRAM_DRAG = 117;
 
     private final static int[] allowedNotificationsDuringChatListAnimations = new int[]{
             NotificationCenter.messagesRead,
@@ -1686,6 +1691,7 @@ public class ChatActivity extends BaseFragment implements
     private final static int charge_fee = 72;
 
     private final static int chat_menu_topic_create = 73;
+    private final static int foldegram_open_second_chat = 75;
 
     private final static int id_chat_compose_panel = 1000;
 
@@ -1694,6 +1700,9 @@ public class ChatActivity extends BaseFragment implements
         public boolean onItemClick(View view, int position, float x, float y) {
             if (isTryingTextSelection() || hasTextSelection() || inPreviewMode || isInsideContainer) {
                 return false;
+            }
+            if (foldegramDragDrop != null && foldegramDragDrop.tryStart(view)) {
+                return true;
             }
             wasManualScroll = true;
             boolean result = true;
@@ -3352,6 +3361,15 @@ public class ChatActivity extends BaseFragment implements
 
     @Override
     public void onFragmentDestroy() {
+        if (foldegramDragDrop != null) {
+            foldegramDragDrop.destroy();
+            foldegramDragDrop = null;
+        }
+        if (foldegramImagePreviewOpen && PhotoViewer.hasInstance()) {
+            PhotoViewer.getInstance().closePhoto(false, false);
+        }
+        FoldegramChatDragDrop.delete(foldegramPreviewImage);
+        foldegramPreviewImage = null;
         super.onFragmentDestroy();
         if (messageMetricsView != null) {
             messageMetricsView.finish();
@@ -3934,6 +3952,8 @@ public class ChatActivity extends BaseFragment implements
                     hideActionMode();
                     updatePinnedMessageView(true);
                     updateVisibleRows();
+                } else if (id == foldegram_open_second_chat) {
+                    FoldegramChatWindowActivity.showChatPicker(ChatActivity.this);
                 } else if (id == edit_quick_reply) {
                     QuickRepliesController.QuickReply currentQuickReply = QuickRepliesController.getInstance(currentAccount).findReply(getQuickReplyId());
                     QuickRepliesActivity.openRenameReplyAlert(getContext(), currentAccount, quickReplyShortcut, currentQuickReply, getResourceProvider(), false, name -> {
@@ -4308,6 +4328,9 @@ public class ChatActivity extends BaseFragment implements
             });
             otherIcon.addView(headerItem.getIconView());
             headerItem.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions));
+            if (Build.VERSION.SDK_INT >= 24 && FoldegramChatWindowActivity.canOpenFrom(this)) {
+                headerItem.addSubItem(foldegram_open_second_chat, R.drawable.msg_topics, "Open second chat");
+            }
 
             if (currentUser != null && currentUser.self && chatMode != MODE_SAVED) {
                 savedChatsItem = headerItem.lazilyAddSubItem(view_as_topics, R.drawable.msg_topics, LocaleController.getString(R.string.SavedViewAsChats));
@@ -4547,6 +4570,10 @@ public class ChatActivity extends BaseFragment implements
             chatListThanosEffect = null;
         }
         removingFromParent = false;
+        if (foldegramDragDrop != null) {
+            foldegramDragDrop.destroy();
+        }
+        foldegramDragDrop = new FoldegramChatDragDrop(this);
         fragmentView = contentView = new ChatActivityFragmentView(context, parentLayout);
         invalidateBlurredSourcesView = new OnPostDrawView(context, true, this::invalidateMergedVisibleBlurredPositionsAndSourcesImpl);
         contentView.addView(invalidateBlurredSourcesView);
@@ -17094,6 +17121,27 @@ public class ChatActivity extends BaseFragment implements
             return ChatActivity.this;
         }
 
+        @Override
+        protected void onVisibilityChanged(View changedView, int visibility) {
+            super.onVisibilityChanged(changedView, visibility);
+            if (visibility != View.VISIBLE) cancelFoldegramPendingDrop();
+        }
+
+        @Override
+        protected void onWindowVisibilityChanged(int visibility) {
+            super.onWindowVisibilityChanged(visibility);
+            if (visibility != View.VISIBLE) cancelFoldegramPendingDrop();
+        }
+
+        @Override
+        public boolean dispatchDragEvent(DragEvent event) {
+            // Own the entire drop surface so EditText cannot bypass preview/permission checks.
+            if (Build.VERSION.SDK_INT >= 24) {
+                return foldegramDragDrop != null && foldegramDragDrop.dispatch(event);
+            }
+            return false;
+        }
+
         public ChatActivityFragmentView(Context context, INavigationLayout parentLayout) {
             super(context, parentLayout);
             adjustPanLayoutHelper = new AdjustPanLayoutHelper(this) {
@@ -19680,6 +19728,172 @@ public class ChatActivity extends BaseFragment implements
         }
     }
 
+    /** Only ordinary sent single messages can leave this chat through our private transport. */
+    boolean canDragFoldegramMessage(MessageObject message) {
+        return Build.VERSION.SDK_INT >= 24 && !isFinished && chatMode == MODE_DEFAULT
+                && !SharedConfig.appLocked && !SharedConfig.isWaitingForPasscodeEnter
+                && !isSecretChat() && !inPreviewMode && !isInsideContainer && !isReport()
+                && message != null && message.messageOwner != null && message.currentAccount == currentAccount
+                && message.getId() > 0 && message.isSent() && !message.isEditing()
+                && message.getGroupId() == 0 && message.messageOwner.action == null
+                && (message.type == MessageObject.TYPE_TEXT || message.type == MessageObject.TYPE_PHOTO)
+                && message.canForwardMessage() && !message.isSponsored() && !message.isEphemeral()
+                && !message.isSecretMedia() && !message.needDrawBluredPreview()
+                && !message.isHiddenSensitive() && !message.isPaidSuggestedPostProtected()
+                && !message.messageOwner.noforwards && !isPeerNoForwards()
+                && !getMessagesController().isPeerNoForwards(message.getDialogId())
+                && message.getDialogId() != UserObject.VERIFY;
+    }
+
+    boolean canAcceptFoldegramDrop(boolean photo) {
+        return !paused && canReceiveFoldegramDrag(photo);
+    }
+
+    boolean activateFoldegramDropTarget() {
+        Activity activity = getParentActivity();
+        if (activity instanceof FoldegramChatWindowActivity) {
+            return ((FoldegramChatWindowActivity) activity).activateForDrop(this);
+        }
+        return canAcceptFoldegramDrop(false);
+    }
+
+    // Drag-start broadcasts must include visible inactive panes without resuming them.
+    boolean canReceiveFoldegramDrag(boolean photo) {
+        Activity activity = getParentActivity();
+        return Build.VERSION.SDK_INT >= 24 && !isFinished && activity != null
+                && !SharedConfig.appLocked && !SharedConfig.isWaitingForPasscodeEnter
+                && parentLayout != null && parentLayout.getLastFragment() == this
+                && !activity.isFinishing() && !activity.isDestroyed()
+                && chatMode == MODE_DEFAULT && !isSecretChat() && !inPreviewMode
+                && !isInsideContainer && !isReport()
+                && fragmentView != null && fragmentView.isAttachedToWindow() && fragmentView.isShown()
+                && fragmentView.getWindowVisibility() == View.VISIBLE
+                && chatActivityEnterView != null && chatActivityEnterView.getVisibility() == View.VISIBLE
+                && !getMessagesController().isFrozen()
+                && (currentChat == null || !ChatObject.isNotInChat(currentChat)
+                    && ChatObject.canWriteToChat(currentChat) && (!photo || ChatObject.canSendPhoto(currentChat)))
+                && (currentUser == null || !UserObject.isDeleted(currentUser) && !userBlocked && !UserObject.isReplyUser(currentUser))
+                && (forumTopic == null || !forumTopic.closed || ChatObject.canManageTopic(currentAccount, currentChat, forumTopic));
+    }
+
+    private boolean hasFoldegramCompositionConflict() {
+        return chatActivityEnterView == null || chatActivityEnterView.isEditingMessage()
+                || editingMessageObject != null || chatActivityEnterView.hasAudioToSend()
+                || chatActivityEnterView.isRecordingAudioVideo()
+                || (chatAttachAlert != null && chatAttachAlert.isShowing());
+    }
+
+    boolean canStageFoldegramMedia() {
+        if (hasFoldegramCompositionConflict() || fieldPanelShown != 0 || messageSuggestionParams != null) {
+            showFoldegramDropNotice("Finish or cancel the current reply, edit, forward, or attachment first. Your draft is unchanged");
+            return false;
+        }
+        return true;
+    }
+
+    boolean stageFoldegramText(String text, int maximumLength) {
+        if (!canAcceptFoldegramDrop(false) || hasFoldegramCompositionConflict()
+                || currentChat != null && !ChatObject.canSendPlain(currentChat)) {
+            showFoldegramDropNotice("Text cannot be added here right now. Your draft is unchanged");
+            return false;
+        }
+        CharSequence existing = chatActivityEnterView.getFieldText();
+        int existingLength = existing == null ? 0 : existing.length();
+        if (existingLength + text.length() + (existingLength == 0 ? 0 : 1) > maximumLength) {
+            showFoldegramDropNotice("This text is too long to add. Your draft is unchanged");
+            return false;
+        }
+        SpannableStringBuilder draft = new SpannableStringBuilder();
+        if (existingLength > 0) draft.append(existing).append("\n");
+        draft.append(text);
+        chatActivityEnterView.setFieldText(draft);
+        chatActivityEnterView.setFieldFocused();
+        return true;
+    }
+
+    boolean stageFoldegramForward(MessageObject message) {
+        boolean photo = message.type == MessageObject.TYPE_PHOTO;
+        if (message.currentAccount != currentAccount || message.getDialogId() == dialog_id
+                || !canAcceptFoldegramDrop(photo) || !canStageFoldegramMedia()
+                || currentChat != null && !photo && !ChatObject.canSendPlain(currentChat)) {
+            showFoldegramDropNotice("This message cannot be forwarded to this chat. Your draft is unchanged");
+            return false;
+        }
+        ArrayList<MessageObject> messages = new ArrayList<>();
+        messages.add(message);
+        showFieldPanelForForward(true, messages);
+        chatActivityEnterView.setFieldFocused();
+        return true;
+    }
+
+    void stageFoldegramImage(File file) {
+        if (!canAcceptFoldegramDrop(true) || !canStageFoldegramMedia()
+                || foldegramImagePreviewOpen || PhotoViewer.hasInstance() && PhotoViewer.getInstance().isVisible()) {
+            FoldegramChatDragDrop.delete(file);
+            showFoldegramDropNotice("Close the current preview before dropping another image. Your draft is unchanged");
+            return;
+        }
+        Pair<Integer, Integer> orientation = AndroidUtilities.getImageOrientation(file.getAbsolutePath());
+        MediaController.PhotoEntry entry = new MediaController.PhotoEntry(0, 0, 0, file.getAbsolutePath(), orientation.first, false, 0, 0, 0).setOrientation(orientation);
+        ArrayList<Object> photos = new ArrayList<>();
+        photos.add(entry);
+        foldegramPreviewImage = file;
+        foldegramImagePreviewOpen = true;
+        PhotoViewer viewer = PhotoViewer.getInstance();
+        viewer.setParentActivity(this, themeDelegate);
+        boolean opened = viewer.openPhotoForSelect(photos, 0, 0, false, new PhotoViewer.EmptyPhotoViewerProvider() {
+            private boolean submitted;
+
+            @Override
+            public void sendButtonPressed(int index, VideoEditedInfo info, boolean notify, int scheduleDate, int scheduleRepeatPeriod, boolean forceDocument) {
+                // Called only by the preview's Send button. A lifecycle/permission change must not send.
+                if (submitted || !canAcceptFoldegramDrop(true) || !canStageFoldegramMedia()
+                        || forceDocument && currentChat != null && !ChatObject.canSendDocument(currentChat)) {
+                    return;
+                }
+                submitted = true;
+                foldegramPreviewImage = null;
+                // Telegram's sendMedia preserves composer text and handles paid-message confirmation.
+                // Keep the copied file in cache for the asynchronous upload/retry path.
+                sendMedia(entry, info, notify, scheduleDate, scheduleRepeatPeriod, forceDocument, 0);
+            }
+
+            @Override
+            public boolean canScrollAway() { return false; }
+
+            @Override
+            public boolean canCaptureMorePhotos() { return false; }
+
+            @Override
+            public void onClose() {
+                foldegramImagePreviewOpen = false;
+                if (!submitted) FoldegramChatDragDrop.delete(file);
+                if (foldegramPreviewImage == file) foldegramPreviewImage = null;
+            }
+        }, this);
+        if (!opened) {
+            foldegramImagePreviewOpen = false;
+            foldegramPreviewImage = null;
+            FoldegramChatDragDrop.delete(file);
+        }
+    }
+
+    void cancelFoldegramPendingDrop() {
+        if (foldegramDragDrop != null) foldegramDragDrop.cancelImport();
+        if (foldegramImagePreviewOpen && PhotoViewer.hasInstance()) {
+            PhotoViewer.getInstance().closePhoto(false, false);
+        }
+        foldegramImagePreviewOpen = false;
+        FoldegramChatDragDrop.delete(foldegramPreviewImage);
+        foldegramPreviewImage = null;
+    }
+
+    void showFoldegramDropNotice(String text) {
+        if (!isFinished && getParentActivity() != null) {
+            AlertsCreator.showSimpleToast(this, text);
+        }
+    }
+
     public void openVideoEditor(String videoPath, CharSequence caption) {
         if (getParentActivity() != null) {
             final Bitmap thumb = SendMessagesHelper.createVideoThumbnail(videoPath, MediaStore.Video.Thumbnails.MINI_KIND);
@@ -22000,6 +22214,9 @@ public class ChatActivity extends BaseFragment implements
         } else if (id == NotificationCenter.didLoadSponsoredMessages) {
             addSponsoredMessages(true);
         } else if (id == NotificationCenter.closeChats) {
+            if (getParentActivity() instanceof FoldegramChatWindowActivity && (args == null || args.length == 0)) {
+                return;
+            }
             if (args != null && args.length > 0) {
                 long did = (Long) args[0];
                 if (did == dialog_id) {
@@ -29980,6 +30197,7 @@ public class ChatActivity extends BaseFragment implements
 
     @Override
     public void onPause() {
+        cancelFoldegramPendingDrop();
         super.onPause();
         scrolling = false;
         if (scrimPopupWindow != null) {
@@ -33348,6 +33566,12 @@ public class ChatActivity extends BaseFragment implements
                 }
                 preserveDim = true;
                 createDeleteMessagesAlert(selectedObject, selectedObjectGroup, true);
+                break;
+            }
+            case OPTION_FOLDEGRAM_DRAG: {
+                if (foldegramDragDrop != null) {
+                    foldegramDragDrop.arm(selectedObject);
+                }
                 break;
             }
             case OPTION_FORWARD: {
@@ -40649,6 +40873,9 @@ public class ChatActivity extends BaseFragment implements
 
         @Override
         public void didLongPress(ChatMessageCell cell, float x, float y) {
+            if (foldegramDragDrop != null && foldegramDragDrop.tryStart(cell)) {
+                return;
+            }
             createMenu(cell, false, false, x, y, false);
             startMultiselect(chatListView.getChildAdapterPosition(cell));
         }
@@ -46162,6 +46389,11 @@ public class ChatActivity extends BaseFragment implements
                     items.add(LocaleController.getString(R.string.Forward));
                     options.add(OPTION_FORWARD);
                     icons.add(R.drawable.msg_forward);
+                    if (canDragFoldegramMessage(selectedObject)) {
+                        items.add("Drag");
+                        options.add(OPTION_FOLDEGRAM_DRAG);
+                        icons.add(R.drawable.msg_forward);
+                    }
                 }
                 if (allowUnpin) {
                     items.add(LocaleController.getString(R.string.UnpinMessage));
@@ -46935,6 +47167,12 @@ public class ChatActivity extends BaseFragment implements
         sponsoredAbout.addView(infoText, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL));
 
         return sponsoredAbout;
+    }
+
+    /** Forward selections are transient UI state and cannot be transferred as a text draft. */
+    public boolean hasFoldegramPendingForward() {
+        return messagePreviewParams != null && messagePreviewParams.forwardMessages != null
+                && !messagePreviewParams.forwardMessages.messages.isEmpty();
     }
 
     public boolean isPeerNoForwards() {

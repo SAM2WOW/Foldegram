@@ -1,0 +1,109 @@
+apply plugin: 'com.android.application'
+
+// The explicit setup-only mode is a tiny, offline APK, not a partially configured client.
+def setupOnly = rootProject.ext.foldegramStubCredentials
+def releaseSigning = rootProject.ext.foldegramSigning
+if (!setupOnly) {
+    apply plugin: 'org.telegram.build-app-plugin'
+}
+
+dependencies {
+    if (!setupOnly) {
+        implementation project(':TMessagesProj')
+        implementation files('../TMessagesProj/libs/libgsaverification-client.aar')
+        coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
+    }
+}
+
+android {
+    namespace 'dev.foldegram.messenger'
+    compileSdkVersion 36
+    buildToolsVersion '36.0.0'
+    ndkVersion '27.2.12479018'
+
+    defaultConfig {
+        applicationId 'dev.foldegram.messenger'
+        minSdkVersion 23
+        targetSdkVersion 36
+        versionCode Integer.parseInt(APP_VERSION_CODE) * 10 + 9
+        versionName APP_VERSION_NAME + (setupOnly ? '-foldegram-setup' : '-foldegram-dev')
+        multiDexEnabled true
+        ndk { abiFilters 'arm64-v8a' }
+        vectorDrawables.useSupportLibrary = true
+    }
+
+    signingConfigs {
+        release {
+            if (releaseSigning.storePath) {
+                storeFile rootProject.file(releaseSigning.storePath)
+            }
+            storePassword releaseSigning.storePassword
+            keyAlias releaseSigning.keyAlias
+            keyPassword releaseSigning.keyPassword
+        }
+        debug {
+            // Upstream's intentionally public development key, never a production identity.
+            storeFile file('../TMessagesProj/config/release.keystore')
+            storePassword 'android'
+            keyAlias 'androidkey'
+            keyPassword 'android'
+        }
+    }
+
+    buildTypes {
+        release {
+            debuggable false
+            jniDebuggable false
+            signingConfig signingConfigs.release
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), '../TMessagesProj/proguard-rules.pro'
+        }
+        debug {
+            debuggable true
+            // Keep Java debugging, but strip native symbols from development APKs.
+            jniDebuggable false
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+            shrinkResources false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+        coreLibraryDesugaringEnabled !setupOnly
+    }
+
+    buildFeatures { buildConfig true }
+    androidResources { noCompress += 'pack' }
+    lint { disable 'MissingTranslation', 'ExtraTranslation', 'BlockedPrivateApi' }
+
+    sourceSets.main.res.srcDirs += 'src/common/res'
+    if (setupOnly) {
+        sourceSets.main {
+            manifest.srcFile 'src/stub/AndroidManifest.xml'
+            java.exclude '**/FoldegramApplication.java'
+            res.srcDirs = ['src/common/res']
+        }
+    }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all {
+            outputFileName = setupOnly ? 'foldegram-setup-debug.apk' : "foldegram-arm64-${variant.buildType.name}.apk"
+        }
+    }
+}
+
+// No signing identity is generated. Release requires an explicitly supplied existing private key.
+androidComponents {
+    beforeVariants(selector().all()) { variant ->
+        variant.enable = (!rootProject.ext.foldegramCompileOnly && !setupOnly) || variant.buildType == 'debug'
+    }
+}
+
+preBuild.dependsOn rootProject.tasks.named('verifyFoldegramCredentials')
+
+tasks.matching { it.name == 'preReleaseBuild' || it.name == 'validateSigningRelease' }.configureEach {
+    dependsOn rootProject.tasks.named('verifyFoldegramReleaseSigning')
+}

@@ -1,3 +1,15 @@
+# Foldegram for Android
+
+An unofficial, experimental Telegram fork with an independent Android package
+and original origami-crane identity. Based on Telegram 12.10.6.
+
+Start with [the Foldegram build guide](docs/BUILD_FOLDEGRAM.md). It explains the
+private API configuration, ARM64 debug client, and explicitly offline setup APK.
+Do not use upstream example credentials or follow the original release-signing
+instructions below for this fork. The upstream README is preserved for provenance.
+
+---
+
 ## Telegram messenger for Android
 
 [Telegram](https://telegram.org) is a messaging app with a focus on speed and security. It’s superfast, simple and free.

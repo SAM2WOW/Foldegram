@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This path is also an input to Telegram's packed-localization Gradle task. -->
+<resources>
+    <string name="AppName" translatable="false">Foldegram</string>
+    <string name="AppNameBeta" translatable="false">Foldegram</string>
+</resources>

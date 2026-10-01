@@ -14,3 +14,18 @@ TMessagesProj_AppHockeyApp/afat/
 TMessagesProj_AppStandalone/afat/
 TMessagesProj_AppHuawei/afat/
 TMessagesProj/jni/ffmpeg/build_android
+
+# Private Foldegram build configuration; never commit API credentials.
+foldegram.properties
+TMessagesProj_AppFoldegram/.cxx/
+
+# Kotlin incremental compilation state
+.kotlin/
+
+# Local Python verification state
+__pycache__/
+
+# Never accidentally add a private distribution signing key. The tracked upstream
+# dummy development key remains tracked for development builds only.
+*.jks
+*.keystore

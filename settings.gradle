@@ -1,11 +1,16 @@
-include ':TMessagesProj'
-include ':TMessagesProj_App'
-include ':TMessagesProj_AppHuawei'
-include ':TMessagesProj_AppHockeyApp'
-include ':TMessagesProj_AppStandalone'
-include ':TMessagesProj_AppTests'
-include ':jlatexmath'
-project(':jlatexmath').projectDir = file('TMessagesProj/lib/jlatexmath/jlatexmath')
+// Foldegram is the only supported APK target in this fork. Upstream app modules
+// remain in the checkout for reference, but their vendor credentials are not used.
+include ':TMessagesProj_AppFoldegram'
+
+def foldegramSetupOnly = providers.gradleProperty('foldegramStubCredentials').orElse('false').get().toBoolean()
+if (!foldegramSetupOnly) {
+    include ':TMessagesProj'
+    include ':jlatexmath'
+    project(':jlatexmath').projectDir = file('TMessagesProj/lib/jlatexmath/jlatexmath')
+
+    gradle.ext.androidxMediaModulePrefix = 'TMessagesProj_Modules:media3:media-'
+    apply from: file('TMessagesProj_Modules/media/core_settings.gradle')
+}
 
 dependencyResolutionManagement {
     repositories {
@@ -13,6 +18,3 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-
-gradle.ext.androidxMediaModulePrefix = 'TMessagesProj_Modules:media3:media-'
-apply from: file("TMessagesProj_Modules/media/core_settings.gradle")

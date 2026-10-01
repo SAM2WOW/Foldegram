@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Setup-only mode has no TMessagesProj dependency, inherited permissions, or services. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application
+        android:label="@string/foldegram_app_name"
+        android:icon="@mipmap/foldegram_launcher"
+        android:roundIcon="@mipmap/foldegram_launcher"
+        android:allowBackup="false"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar"
+        android:resizeableActivity="true">
+        <activity
+            android:name="dev.foldegram.messenger.FoldegramSetupActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -141,6 +141,9 @@ android {
 
     defaultConfig {
         minSdkVersion 21
+        ndk { abiFilters "arm64-v8a" }
+        buildConfigField "int", "FOLDEGRAM_API_ID", rootProject.ext.foldegramApiId.toString()
+        buildConfigField "String", "FOLDEGRAM_API_HASH", "\"${rootProject.ext.foldegramApiHash}\""
         targetSdkVersion 36
 
         vectorDrawables.generatedDensities = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi']
@@ -163,9 +166,9 @@ android {
             multiDexEnabled true
             ndk.debugSymbolLevel = 'FULL'
             buildConfigField "String", "BUILD_VERSION_STRING", "\"" + APP_VERSION_NAME + "\""
-            buildConfigField "String", "BETA_URL", "\"" + getProps("BETA_PRIVATE_URL") + "\""
-            buildConfigField "boolean", "DEBUG_VERSION", "true"
-            buildConfigField "boolean", "DEBUG_PRIVATE_VERSION", "true"
+            buildConfigField "String", "BETA_URL", "\"\""
+            buildConfigField "boolean", "DEBUG_VERSION", "false"
+            buildConfigField "boolean", "DEBUG_PRIVATE_VERSION", "false"
             buildConfigField "boolean", "BUNDLE", "false"
             buildConfigField "int", "VERSION_NUM", "0"
         }
@@ -177,8 +180,8 @@ android {
             ndk.debugSymbolLevel = 'FULL'
             buildConfigField "String", "BUILD_VERSION_STRING", "\"" + APP_VERSION_NAME + "\""
             buildConfigField "String", "BETA_URL", "\"" + getProps("BETA_PRIVATE_URL") + "\""
-            buildConfigField "boolean", "DEBUG_VERSION", "true"
-            buildConfigField "boolean", "DEBUG_PRIVATE_VERSION", "true"
+            buildConfigField "boolean", "DEBUG_VERSION", "false"
+            buildConfigField "boolean", "DEBUG_PRIVATE_VERSION", "false"
             buildConfigField "boolean", "BUNDLE", "false"
             buildConfigField "int", "VERSION_NUM", "1"
         }
@@ -190,7 +193,7 @@ android {
             ndk.debugSymbolLevel = 'FULL'
             buildConfigField "String", "BUILD_VERSION_STRING", "\"" + APP_VERSION_NAME + "\""
             buildConfigField "String", "BETA_URL", "\"" + getProps("BETA_PUBLIC_URL") + "\""
-            buildConfigField "boolean", "DEBUG_VERSION", "true"
+            buildConfigField "boolean", "DEBUG_VERSION", "false"
             buildConfigField "boolean", "DEBUG_PRIVATE_VERSION", "false"
             buildConfigField "boolean", "BUNDLE", "false"
             buildConfigField "int", "VERSION_NUM", "4"
@@ -203,8 +206,8 @@ android {
             ndk.debugSymbolLevel = 'FULL'
             buildConfigField "String", "BUILD_VERSION_STRING", "\"" + APP_VERSION_NAME + "\""
             buildConfigField "String", "BETA_URL", "\"" + getProps("BETA_HARDCORE_URL") + "\""
-            buildConfigField "boolean", "DEBUG_VERSION", "true"
-            buildConfigField "boolean", "DEBUG_PRIVATE_VERSION", "true"
+            buildConfigField "boolean", "DEBUG_VERSION", "false"
+            buildConfigField "boolean", "DEBUG_PRIVATE_VERSION", "false"
             buildConfigField "boolean", "BUNDLE", "false"
             buildConfigField "int", "VERSION_NUM", "5"
         }
@@ -250,7 +253,7 @@ def getProps(String propName) {
         return "";
     }
 }
-apply plugin: 'com.google.gms.google-services'
+// No Google Services plugin: never package upstream Firebase configuration.
 
 task checkVisibility {
     doFirst {
@@ -272,4 +275,4 @@ task checkVisibility {
     }
 }
 
-preBuild.dependsOn checkVisibility
+preBuild.dependsOn checkVisibility, rootProject.tasks.named("verifyFoldegramCredentials")

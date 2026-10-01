@@ -1,0 +1,12 @@
+# Copy to foldegram.properties (git-ignored), restrict access, and fill locally.
+# Or supply these two environment variables through your private build environment.
+# Never commit or paste real values into logs, chat, issues, or command arguments.
+FOLDEGRAM_API_ID=
+FOLDEGRAM_API_HASH=
+
+# Optional distribution signing: an EXISTING user-owned keystore, never the public debug key.
+# Supply a path outside the source checkout. Do not send passwords or the keystore to the agent.
+FOLDEGRAM_KEYSTORE_PATH=
+FOLDEGRAM_KEYSTORE_PASSWORD=
+FOLDEGRAM_KEY_ALIAS=
+FOLDEGRAM_KEY_PASSWORD=

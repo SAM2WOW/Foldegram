@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="foldegram_app_name" translatable="false">Foldegram</string>
+    <string name="foldegram_setup_title">Setup-only build</string>
+    <string name="foldegram_setup_body">The Foldegram icon and Android package are installed. This offline build has no messaging, login, or network access.\n\nTo build the full client, provide your own Telegram API ID and API hash privately, then rebuild without the setup-only option. See the included build guide.\n\nThis is an unofficial, experimental Telegram client.</string>
+</resources>

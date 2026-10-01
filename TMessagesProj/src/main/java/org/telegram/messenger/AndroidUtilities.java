@@ -2747,6 +2747,8 @@ public class AndroidUtilities {
     public static void checkDisplaySize(Context context, Configuration newConfiguration) {
         try {
             float oldDensity = density;
+            final int oldWidth = displaySize.x;
+            final int oldHeight = displaySize.y;
             density = context.getResources().getDisplayMetrics().density;
             float newDensity = density;
             if (firstConfigurationWas && Math.abs(oldDensity - newDensity) > 0.001) {
@@ -2789,6 +2791,10 @@ public class AndroidUtilities {
                 if (Math.abs(displaySize.y - newSize) > 3) {
                     displaySize.y = newSize;
                 }
+            }
+            if (oldWidth != displaySize.x || oldHeight != displaySize.y || Math.abs(oldDensity - density) > 0.001f) {
+                // Fold and window-size changes invalidate dimensions calculated for the old window.
+                roundMessageSize = 0;
             }
             if (roundMessageSize == 0) {
                 if (AndroidUtilities.isTablet()) {
@@ -2956,10 +2962,17 @@ public class AndroidUtilities {
     }
 
     public static void resetTabletFlag() {
+        resetTabletFlag(null);
+    }
+
+    public static void resetTabletFlag(Context context) {
         if (wasTablet == null) {
-            wasTablet = isTabletInternal();
+            wasTablet = isTablet();
         }
-        isTablet = null;
+        // An application's resources can describe the whole display while an activity's
+        // resources describe a smaller window. Prefer the latter when it is available.
+        isTablet = context == null ? null : context.getResources().getBoolean(R.bool.isTablet);
+        leftBaseline = isTablet() ? 80 : 72;
         SharedConfig.updateTabletConfig();
     }
 

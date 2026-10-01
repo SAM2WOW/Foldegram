@@ -343,6 +343,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     private boolean passcodeSaveIntentIsRestore;
 
     private boolean tabletFullSize;
+    // The mode of this activity's attached hierarchy, not the process-wide resource cache.
+    private boolean tabletLayout;
+    private final Runnable refreshWindowLayoutRunnable = () -> refreshWindowLayout("windowSizeChanged");
 
     private String loadingThemeFileName;
     private String loadingThemeWallpaperName;
@@ -407,6 +410,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
         instance = this;
         ApplicationLoader.postInitApplication();
+        AndroidUtilities.resetTabletFlag(this);
         AndroidUtilities.checkDisplaySize(this, getResources().getConfiguration());
         currentAccount = UserConfig.selectedAccount;
         registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
@@ -494,6 +498,12 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
             @Override
             public void onLayoutChange(View v, int l, int t, int r, int b, int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                if (r > l && b > t && (r - l != oldRight - oldLeft || b - t != oldBottom - oldTop)) {
+                    // A resize need not cross a Configuration threshold. Reconcile after layout,
+                    // never move fragment views while their parent is measuring or laying out.
+                    v.removeCallbacks(refreshWindowLayoutRunnable);
+                    v.post(refreshWindowLayoutRunnable);
+                }
                 boolean portrait = (b - t) > (r - l);
                 if (portrait != wasPortrait) {
                     AndroidUtilities.runOnUIThread(() -> {
@@ -943,20 +953,20 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     final int height = MeasureSpec.getSize(heightMeasureSpec);
                     setMeasuredDimension(width, height);
 
-                    if (!AndroidUtilities.isInMultiwindow && (!AndroidUtilities.isSmallTablet() || getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE)) {
-                        tabletFullSize = false;
-                        final int leftWidth = AndroidUtilities.getTabletLeftFragmentSize(width, insets.left, insets.right);
+                    // checkLayout() owns pane mode and fragment migration together. Do not
+                    // switch only the geometry here and leave a chat in an unmeasured pane.
+                    if (!tabletFullSize) {
+                        final int leftWidth = Math.min(width, AndroidUtilities.getTabletLeftFragmentSize(width, insets.left, insets.right));
                         actionBarLayout.getView().measure(MeasureSpec.makeMeasureSpec(leftWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
                         rightActionBarLayout.getView().measure(MeasureSpec.makeMeasureSpec(width - leftWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
                     } else {
-                        tabletFullSize = true;
                         actionBarLayout.getView().measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
                     }
                     backgroundTablet.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
                     shadowTablet.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
                     layersActionBarLayout.getView().measure(
-                        MeasureSpec.makeMeasureSpec(Math.min(dp(500), width - dp(16)), MeasureSpec.EXACTLY),
-                        MeasureSpec.makeMeasureSpec(height - insets.top - insets.bottom - dp(16), MeasureSpec.EXACTLY)
+                        MeasureSpec.makeMeasureSpec(Math.max(0, Math.min(dp(500), width - dp(16))), MeasureSpec.EXACTLY),
+                        MeasureSpec.makeMeasureSpec(Math.max(0, height - insets.top - insets.bottom - dp(16)), MeasureSpec.EXACTLY)
                     );
 
                     inLayout = false;
@@ -966,8 +976,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 protected void onLayout(boolean changed, int l, int t, int r, int b) {
                     final int width = getMeasuredWidth();
                     final int height = getMeasuredHeight();
-                    if (!AndroidUtilities.isInMultiwindow && (!AndroidUtilities.isSmallTablet() || getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE)) {
-                        final int leftWidth = AndroidUtilities.getTabletLeftFragmentSize(width, insets.left, insets.right);
+                    if (!tabletFullSize) {
+                        final int leftWidth = Math.min(width, AndroidUtilities.getTabletLeftFragmentSize(width, insets.left, insets.right));
                         actionBarLayout.getView().layout(0, 0, actionBarLayout.getView().getMeasuredWidth(), actionBarLayout.getView().getMeasuredHeight());
                         rightActionBarLayout.getView().layout(leftWidth, 0, leftWidth + rightActionBarLayout.getView().getMeasuredWidth(), rightActionBarLayout.getView().getMeasuredHeight());
                     } else {
@@ -1074,6 +1084,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 drawerLayoutContainer.addView(actionBarLayout.getView(), new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             }
         }
+        tabletLayout = AndroidUtilities.isTablet();
         FloatingDebugController.setActive(this, SharedConfig.isFloatingDebugActive, false);
     }
 
@@ -1321,7 +1332,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     }
 
     private void checkLayout() {
-        if (!AndroidUtilities.isTablet() || rightActionBarLayout == null || AndroidUtilities.getWasTablet() != null && AndroidUtilities.getWasTablet() != AndroidUtilities.isTabletForce()) {
+        if (!tabletLayout || !AndroidUtilities.isTablet() || rightActionBarLayout == null) {
             return;
         }
 
@@ -6852,6 +6863,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     @Override
     protected void onDestroy() {
+        if (drawerLayoutContainer != null) {
+            drawerLayoutContainer.removeCallbacks(refreshWindowLayoutRunnable);
+        }
         isActive = false;
         activeInstanceCount--;
         unregisterReceiver(batteryReceiver);
@@ -7038,7 +7052,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         if (VoIPFragment.getInstance() != null) {
             VoIPFragment.onResume();
         }
-        invalidateTabletMode();
+        refreshWindowLayout("resume");
         SpoilerEffect2.pause(false);
 
         if (ApplicationLoader.applicationLoaderInstance != null) {
@@ -7061,12 +7075,12 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     public static Runnable whenResumed;
 
     private void invalidateTabletMode() {
-        Boolean wasTablet = AndroidUtilities.getWasTablet();
-        if (wasTablet == null) {
-            return;
-        }
+        // Application and activity configuration callbacks may update the shared cache
+        // in either order. Compare with the hierarchy we actually built instead.
+        final boolean wasTablet = tabletLayout;
         AndroidUtilities.resetWasTabletFlag();
         if (wasTablet != AndroidUtilities.isTablet()) {
+            logWindowLayout("tabletModeChanged");
             long dialogId = 0;
             long topicId = 0;
             if (wasTablet) {
@@ -7113,15 +7127,57 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         }
     }
 
+    private void refreshWindowLayout(String reason) {
+        if (isFinishing() || isDestroyed() || actionBarLayout == null || drawerLayoutContainer == null) {
+            return;
+        }
+        updateWindowConfiguration(null);
+        reconcileWindowLayout(reason);
+    }
+
+    private void updateWindowConfiguration(Configuration configuration) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            AndroidUtilities.isInMultiwindow = isInMultiWindowMode();
+        }
+        // Activity resources describe this window, including a split-screen window.
+        AndroidUtilities.resetTabletFlag(this);
+        AndroidUtilities.checkDisplaySize(this, configuration);
+    }
+
+    private void reconcileWindowLayout(String reason) {
+        invalidateTabletMode();
+        checkLayout();
+        if (drawerLayoutContainer != null) {
+            drawerLayoutContainer.requestLayout();
+            ViewCompat.requestApplyInsets(drawerLayoutContainer);
+        }
+        logWindowLayout(reason);
+    }
+
+    private void logWindowLayout(String reason) {
+        if (!BuildVars.LOGS_ENABLED) {
+            return;
+        }
+        final Configuration configuration = getResources().getConfiguration();
+        // Geometry and state only: never log account, dialog, message or intent data.
+        FileLog.d("FoldegramWindow event=" + reason
+            + " configDp=" + configuration.screenWidthDp + "x" + configuration.screenHeightDp
+            + " smallestDp=" + configuration.smallestScreenWidthDp
+            + " displayPx=" + AndroidUtilities.displaySize.x + "x" + AndroidUtilities.displaySize.y
+            + " rootPx=" + (drawerLayoutContainer == null ? "none" : drawerLayoutContainer.getWidth() + "x" + drawerLayoutContainer.getHeight())
+            + " tablet=" + AndroidUtilities.isTablet() + " attachedTablet=" + tabletLayout
+            + " fullSize=" + tabletFullSize + " multiWindow=" + AndroidUtilities.isInMultiwindow
+            + " resumed=" + isResumed
+            + " stacks=" + mainFragmentsStack.size() + "/" + rightFragmentsStack.size() + "/" + layerFragmentsStack.size());
+    }
+
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
-        AndroidUtilities.checkDisplaySize(this, newConfig);
+        updateWindowConfiguration(newConfig);
         AndroidUtilities.setPreferredMaxRefreshRate(getWindow());
         super.onConfigurationChanged(newConfig);
         pipActivityHandler.onConfigurationChanged(newConfig);
-        AndroidUtilities.resetTabletFlag();
-        invalidateTabletMode();
-        checkLayout();
+        reconcileWindowLayout("configurationChanged");
         PipRoundVideoView pipRoundVideoView = PipRoundVideoView.getInstance();
         if (pipRoundVideoView != null) {
             pipRoundVideoView.onConfigurationChanged();
@@ -7149,9 +7205,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     @Override
     public void onMultiWindowModeChanged(boolean isInMultiWindowMode) {
-        AndroidUtilities.isInMultiwindow = isInMultiWindowMode;
-        checkLayout();
         super.onMultiWindowModeChanged(isInMultiWindowMode);
+        AndroidUtilities.isInMultiwindow = isInMultiWindowMode;
+        refreshWindowLayout("multiWindowChanged");
     }
 
     @Override

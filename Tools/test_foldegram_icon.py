@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression checks for the original adaptive crane (no Android runtime needed)."""
+"""Regression checks for the approved adaptive crane (no Android runtime needed)."""
 import math
 import re
 import unittest
@@ -23,12 +23,13 @@ class CraneIconTest(unittest.TestCase):
                     x,y = float(x),float(y)
                     self.assertLessEqual(math.hypot(x-54,y-54), 33)
                     points.append((x,y))
-            self.assertGreaterEqual(max(y for x,y in points)-min(y for x,y in points),48)
+            self.assertGreaterEqual(max(y for x,y in points)-min(y for x,y in points),40)
             self.assertGreaterEqual(max(x for x,y in points)-min(x for x,y in points),48)
     def test_monochrome_is_white_without_background(self):
         paths=ET.parse(RES/'drawable/foldegram_crane_monochrome.xml').getroot().findall('path')
-        self.assertEqual(len(paths),1)
-        self.assertEqual(paths[0].get(A+'fillColor'),'#FFFFFF')
+        self.assertEqual(len(paths),6)
+        for path in paths: self.assertEqual(path.get(A+'fillColor'),'#FFFFFF')
+        self.assertEqual((RES/'drawable/foldegram_crane.xml').read_text(), (RES/'drawable/foldegram_crane_monochrome.xml').read_text())
     def test_legacy_call_icon_matches(self):
         self.assertEqual((RES/"drawable-anydpi/ic_launcher_dr.xml").read_text(), (RES/"mipmap-anydpi/foldegram_launcher.xml").read_text())
     def test_adaptive_resources(self):

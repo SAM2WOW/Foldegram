@@ -1,13 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Original Foldegram origami-crane artwork; GPL-2.0-or-later. All vertices stay inside the centered 66dp safe circle. -->
+<!-- Foldegram approved generated crane, transcribed as clean polygon planes. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#76AAA8" android:pathData="M 46,61 L 24,65 L 46,71 L 59,71 Z" />
-    <path android:fillColor="#DAEEE6" android:pathData="M 31,32 L 55,53 L 60,71 L 43,59 Z" />
-    <path android:fillColor="#9CC6BE" android:pathData="M 31,32 L 48,58 L 60,71 L 43,59 Z" />
-    <path android:fillColor="#F8F1DF" android:pathData="M 68,26 L 64,60 L 60,71 L 49,62 Z" />
-    <path android:fillColor="#D4DCC6" android:pathData="M 68,26 L 57,59 L 60,71 L 64,60 Z" />
-    <path android:fillColor="#EEF0DA" android:pathData="M 57,66 L 67,59 L 72,44 L 78,42 L 85,50 L 77,48 L 76,53 L 73,65 L 62,74 L 52,71 Z" />
-    <path android:fillColor="#82B7AD" android:pathData="M 67,59 L 72,44 L 74,46 L 71,63 L 62,74 L 57,70 Z" />
-    <path android:fillColor="#E7AD87" android:pathData="M 78,42 L 85,50 L 77,48 Z" />
-    <path android:fillColor="#B4CEC0" android:pathData="M 46,61 L 57,66 L 62,74 L 45,70 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M 23.868,41.042 L 30.401,35.132 L 31.178,38.605 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M 31.023,35.08 L 33.926,36.998 L 42.273,55.195 L 37.814,62.557 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M 40.821,49.7 L 48.649,45.086 L 42.843,54.21 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M 49.946,44.412 L 60.211,55.403 L 39.421,61.883 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M 56.737,50.114 L 76.127,30.258 L 64.877,59.343 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M 40.769,62.609 L 61.092,56.336 L 73.846,72.874 Z" />
 </vector>

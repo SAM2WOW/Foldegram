@@ -1,7 +1,9 @@
-# Original Foldegram crane
+# Approved Foldegram crane
 
-The adaptive color foreground and white-only monochrome layer use a 108 × 108 viewport. All polygon vertices are within the centered radius-33 safe circle (largest radius about 31.96dp), with a 61 × 48dp silhouette. Straight edges also remain within that circle. The background fills the entire adaptive layer; launcher masks are not baked into either foreground. Two raised wings, a long neck, beak and tail keep the origami bird recognizable at small sizes.
+The white crane is a six-plane vector transcription of the user-approved generated draft (2026-10-01). It retains the left-facing beak, angular neck, small interior fold, central triangle, raised rear point and broad lower wing. Fold gaps are intentionally open; there is no downward-projecting triangle below the neck. The draft was generated using a user-provided online image as visual inspiration; no claim of exclusive copyright or stock-image ownership is made.
 
-Android 26+ uses separate foreground/background layers; Android 13+ additionally uses the white alpha silhouette for themed icons. The launcher chooses the actual themed tint. The SVG white variant has a transparent background. Color and white previews were inspected at 48px and 32px with circle and rounded-square masks. This is artwork validation, not launcher/device QA.
+All six planes undergo the same uniform scale and translation, with their area-weighted centroid at (54,54). Their furthest vertex is approximately 32.8dp from the center of the 108dp canvas, inside the 33dp-radius adaptive safe circle. The actual non-square silhouette spans about 52.26 × 42.62dp. This preserves its approved proportions rather than stretching it into a square. Straight edges remain inside the safe circle. Background and foreground remain separate; masks are supplied by Android.
 
-Reference: [Android adaptive icon guidance](https://developer.android.com/develop/ui/compose/system/icon_design_adaptive), checked 2026-10-01. Run `python Tools/test_foldegram_icon.py` for geometry/resource checks.
+The standard foreground and Android 13+ monochrome layer share identical opaque white paths with transparent fold gaps. The launcher chooses themed tint. Pre-Android 8 and call/notification fallback vectors use the same crane with a full ink background. Both SVGs match the production polygons; the white SVG has a transparent background.
+
+Circle and rounded-square previews were inspected at large size, 48px and 32px. This validates artwork, not device rendering. Run `python Tools/test_foldegram_icon.py` for geometry/resource checks. Reference: [Android adaptive icon guidance](https://developer.android.com/develop/ui/compose/system/icon_design_adaptive), checked 2026-10-01.

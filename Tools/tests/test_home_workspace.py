@@ -24,16 +24,16 @@ public class HomeTest {
  public static void main(String[]args){
   for(int cycle=0;cycle<100;cycle++)for(int w:new int[]{0,240,360,599,600,720,840,1200,1800})
    for(boolean two:new boolean[]{false,true})for(boolean expanded:new boolean[]{false,true})for(int active=0;active<2;active++){
-    FoldegramHomeGeometry g=new FoldegramHomeGeometry(w,600,56,320,8,two,expanded,true,active);
+    FoldegramHomeGeometry g=new FoldegramHomeGeometry(w,600,56,320,2,two,expanded,true,active);
     check(g.list>=0&&g.rail>=0&&g.firstWidth>=0&&g.secondWidth>=0);
     check(g.rail+g.list<=w&&g.firstX+g.firstWidth<=w&&g.secondX+g.secondWidth<=w);
-    if(g.firstWidth>0&&g.secondWidth>0)check(g.firstX+g.firstWidth+8==g.secondX);
+    if(g.firstWidth>0&&g.secondWidth>0)check(g.firstX+g.firstWidth+2==g.secondX);
     if(two)check(g.rail==Math.min(w,56));
     if(w<600&&two&&!expanded)check((active==0?g.firstWidth:g.secondWidth)==Math.max(0,w-56));
     if(two&&!expanded&&w>=600)check(Math.abs(g.firstWidth-g.secondWidth)<=1);
    }
-  FoldegramHomeGeometry home=new FoldegramHomeGeometry(840,600,56,320,8,false,false,true,0);
-  FoldegramHomeGeometry split=new FoldegramHomeGeometry(840,600,56,320,8,true,false,true,1);
+  FoldegramHomeGeometry home=new FoldegramHomeGeometry(840,600,56,320,2,false,false,true,0);
+  FoldegramHomeGeometry split=new FoldegramHomeGeometry(840,600,56,320,2,true,false,true,1);
   check(home.list==320&&home.firstX==320&&split.firstX==56&&split.secondX>split.firstX);
  }
 }''',[('FoldegramHomeGeometry.java',(SRC/'FoldegramHomeGeometry.java').read_text())])
@@ -54,10 +54,11 @@ public class HomeTest {
   void removeAllFragments(){stack.clear();} void onBackPressed(){backs++;}
  }
  Object host;boolean two,choosing,expanded,listFocused,permit=true;int active;
- INavigationLayout first=new INavigationLayout(),second=new INavigationLayout();Object drag;
+ INavigationLayout first=new INavigationLayout(),second=new INavigationLayout();Object drag,chooser;
  boolean allowed(){return permit;}boolean compositionSafe(INavigationLayout l){return l.safe;}
  boolean sameDialog(ChatActivity c,INavigationLayout l){return !l.stack.isEmpty()&&((ChatActivity)l.stack.get(l.stack.size()-1)).dialog==c.dialog;}
  INavigationLayout pane(int p){return p==0?first:second;}
+ void cancelChooser(){choosing=false;second.removeAllFragments();}void updateRail(){}
  void saveDraft(INavigationLayout l){}void cancelDrag(){drag=null;}void animateLayout(){}void syncFocus(){}
  PRESENT
  CLOSE
@@ -111,11 +112,108 @@ public class HomeTest {
   self.assertIn('if (foldegramHome != null && foldegramHome.isTwo())',permission)
   self.assertIn('owner.onRequestPermissionsResultFragment',permission)
 
+ def test_interrupted_translations_keep_visual_position(self):
+  code="""package org.telegram.ui;
+public class HomeTest {
+ METHOD
+ static void check(boolean b){if(!b)throw new AssertionError();}
+ public static void main(String[] args){
+  float visual=320;
+  for(int n=0;n<1000;n++){
+   int target=n%2==0?56:376;
+   float offset=transitionOffset(visual,target,true,840,false);
+   check(Math.abs(target+offset-visual)<.001f);
+   visual=target+offset*.37f; // interrupt before completion, then reverse next iteration
+  }
+  check(transitionOffset(0,449,false,840,true)==391);
+  check(transitionOffset(0,0,false,360,false)==0);
+ }
+}""".replace('METHOD',method(HOME,'static float transitionOffset('))
+  self.java(code)
+  self.assertNotIn('requestLayout',method(HOME,'private void applyMotion(').split('// Final widths')[0])
+  self.assertNotIn('addUpdateListener',HOME)
+  self.assertIn('stopMotion(true)',method(HOME,'void measure('))
+  self.assertIn('lastHeight != height',method(HOME,'void measure('))
+  capture=method(HOME,'private void animateLayout(')
+  self.assertLess(capture.index('getX()'),capture.index('stopMotion(false)'))
+
+ def test_split_mounts_right_picker_before_selection(self):
+  code="""package org.telegram.ui;
+import java.util.*;
+public class HomeTest {
+ static class Context {}
+ static class View {}
+ static class Bundle {void putBoolean(String k,boolean v){}void putInt(String k,int v){}}
+ static class Host extends Context {String getString(int id){return "Choose a chat";}View getCurrentFocus(){return null;}}
+ static class AndroidUtilities {static void hideKeyboard(View v){}}
+ static class R {static class string {static int FoldegramFinishComposition,FoldegramChooseChatTitle,FoldegramChooseDifferentChat;}}
+ static class Toast {static int LENGTH_LONG,LENGTH_SHORT;static Toast makeText(Host h,int s,int d){return new Toast();}void show(){}}
+ static class BaseFragment {void finishFragment(boolean b){}}
+ static class ActionBar {String title;void setTitle(String t){title=t;}}
+ static class DialogsActivity extends BaseFragment {
+  static int DIALOGS_TYPE_DEFAULT;int account;ActionBar bar=new ActionBar();
+  interface Delegate {boolean select(DialogsActivity f,ArrayList<MessagesStorage.TopicKey>s,Object m,Object p,boolean n,int d,int r,BaseFragment t);}
+  Delegate delegate;DialogsActivity(Bundle b){}void setCurrentAccount(int a){account=a;}void setDelegate(Delegate d){delegate=d;}
+  View createView(Context c){return new View();}ActionBar getActionBar(){return bar;}
+ }
+ static class ChatActivity extends BaseFragment {
+  INavigationLayout parent;int account;ChatActivity(Bundle b){}INavigationLayout getParentLayout(){return parent;}
+  int getCurrentAccount(){return account;}void setCurrentAccount(int a){account=a;}
+ }
+ static class INavigationLayout {
+  ArrayList<BaseFragment> stack=new ArrayList<>();int mounted;
+  static class NavigationParams {NavigationParams(ChatActivity c){}NavigationParams setRemoveLast(boolean b){return this;}}
+  boolean addFragmentToStack(BaseFragment f){stack.add(f);return true;}void showLastFragment(){mounted++;}
+ }
+ static class MessagesStorage {static class TopicKey {long dialogId,topicId;}}
+ static class MessagesController {static MessagesController getInstance(int a){return new MessagesController();}boolean checkCanOpenChat(Bundle b,BaseFragment f){return true;}}
+ static class ForumUtilities {static void applyTopic(ChatActivity c,MessagesStorage.TopicKey t){}}
+ static class FoldegramChatWindowActivity {static Bundle argumentsForDialog(long d,long t){return new Bundle();}}
+ Host host=new Host();INavigationLayout first=new INavigationLayout(),second=new INavigationLayout();
+ boolean two,choosing,expanded,listFocused,permit=true,safe=true;int active,requests;DialogsActivity chooser;
+ boolean allowed(){return permit;}boolean owns(ChatActivity c){return c.parent==first;}
+ boolean compositionSafe(INavigationLayout l){return safe;}void focus(int p){active=p;}void toggleList(){}
+ void updateRail(){}void animateLayout(){requests++;}boolean sameDialog(ChatActivity c,INavigationLayout l){return false;}
+ void present(INavigationLayout l,INavigationLayout.NavigationParams p){}
+ OPEN
+ static void check(boolean b){if(!b)throw new AssertionError();}
+ public static void main(String[]a){
+  HomeTest h=new HomeTest();ChatActivity original=new ChatActivity(new Bundle());original.parent=h.first;h.first.stack.add(original);
+  h.open(original);check(h.choosing&&!h.two&&!h.expanded&&!h.listFocused&&h.active==1);
+  check(h.second.stack.get(0)==h.chooser&&h.second.mounted==1&&h.requests==1);
+  check(h.first.stack.get(0)==original);h.chooser.createView(h.host);check(h.chooser.bar.title.equals("Choose a chat"));
+  h.open(original);check(h.second.stack.size()==1&&h.second.mounted==1);
+  HomeTest blocked=new HomeTest();blocked.permit=false;blocked.open(original);check(blocked.second.stack.isEmpty());
+ }
+}"""
+  opened=method(HOME,'void open(').replace('org.telegram.messenger.MessagesStorage.','MessagesStorage.').replace('org.telegram.ui.Components.Forum.ForumUtilities.','ForumUtilities.')
+  self.java(code.replace('OPEN',opened))
+
+ def test_duplicate_guard_before_chat_creation(self):
+  code="""package org.telegram.ui;
+public class HomeTest {
+ static class BaseFragment {}
+ static class Bundle {long id;Bundle(long id){this.id=id;}}
+ static class ChatActivity extends BaseFragment {Bundle args;long resolved;ChatActivity(long id,boolean live){args=new Bundle(id);resolved=live?id:0;}long getDialogId(){return resolved;}Bundle getArguments(){return args;}}
+ static class INavigationLayout {BaseFragment top;BaseFragment getLastFragment(){return top;}}
+ static class FoldegramChatWindowActivity {static long dialogId(Bundle args){return args.id;}}
+ METHOD
+ public static void main(String[]args){
+  HomeTest t=new HomeTest();INavigationLayout other=new INavigationLayout();
+  for(long id:new long[]{123,-42,4294967296L}){
+   other.top=new ChatActivity(id,true);
+   if(!t.sameDialog(new ChatActivity(id,false),other))throw new AssertionError("uncreated duplicate");
+   if(t.sameDialog(new ChatActivity(id+1,false),other))throw new AssertionError("distinct chat");
+  }
+ }
+}""".replace('METHOD',method(HOME,'private boolean sameDialog('))
+  self.java(code)
+
  def test_crane_geometry_unchanged(self):
   import subprocess
   path='TMessagesProj/src/main/res/drawable/foldegram_crane_mark.xml'
   self.assertEqual((ROOT/path).read_bytes(),subprocess.check_output(['git','show','00e546c1d:'+path],cwd=ROOT))
   stories=(SRC/'Stories/DialogStoriesCell.java').read_text()
-  self.assertIn('LayoutHelper.createFrame(26, 26)',stories)
+  self.assertIn('params.width = dp(compact ? 26 : 138)',stories)
   self.assertNotIn('LayoutHelper.createFrame(90, 22)',stories)
 if __name__=='__main__':unittest.main()

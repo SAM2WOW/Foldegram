@@ -1,7 +1,14 @@
 /* Foldegram continuous home workspace. GNU GPL v2 or later. */
 package org.telegram.ui;
 
-import android.animation.ValueAnimator;
+import android.content.Context;
+import android.widget.FrameLayout;
+import org.telegram.ui.Components.BackupImageView;
+import org.telegram.ui.Components.AvatarDrawable;
+import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.tgnet.TLRPC;
+import org.telegram.tgnet.TLObject;
+import org.telegram.messenger.ImageLocation;
 import android.content.ClipData;
 import android.graphics.Canvas;
 import android.graphics.Outline;
@@ -41,7 +48,10 @@ final class FoldegramHomeWorkspace {
     private final ViewGroup parent;
     final INavigationLayout list, first, second;
     private final LinearLayout rail;
-    private final TextView[] buttons = new TextView[4];
+    private final FrameLayout[] avatarButtons = new FrameLayout[2];
+    private final BackupImageView[] avatars = new BackupImageView[2];
+    private final long[] avatarKeys = {Long.MIN_VALUE, Long.MIN_VALUE};
+    private final ImageView closeButton;
     private final ImageView crane;
     private final View drop;
     private float downX, downY;
@@ -50,9 +60,13 @@ final class FoldegramHomeWorkspace {
     private boolean two, expanded, choosing, destroyed, listFocused;
     private Bundle pendingRestore;
     private int active, hovered = -1;
-    private ValueAnimator animator;
-    private float progress = 1;
-    private int[] previous = new int[6];
+    private boolean transitionPending, focusSyncQueued;
+    private final float[] previousX = new float[4];
+    private final float[] previousAlpha = new float[4];
+    private final boolean[] previousVisible = new boolean[4];
+    private int lastWidth, lastHeight, railColor;
+    private final Runnable focusSync = () -> { focusSyncQueued = false; syncFocus(); };
+    private DialogsActivity chooser;
     private FoldegramHomeGeometry geometry;
     private Drag drag;
     private DialogsActivity boundDialogs;
@@ -78,30 +92,16 @@ final class FoldegramHomeWorkspace {
         second.setDrawerLayoutContainer(drawer);
         first.setFragmentStackChangedListener(() -> {
             listFocused = false;
+            updateRail();
             parent.requestLayout();
         });
-        second.setFragmentStackChangedListener(parent::requestLayout);
+        second.setFragmentStackChangedListener(() -> { updateRail(); parent.requestLayout(); });
         // Keep native non-bubble status-bar participation. The existing home draws edge to edge.
         parent.addView(second.getView(), insertion);
         rail = new LinearLayout(host);
         rail.setOrientation(LinearLayout.VERTICAL);
         rail.setGravity(Gravity.CENTER_HORIZONTAL);
         parent.addView(rail, insertion + 1);
-        for (int i = 0; i < buttons.length; i++) {
-            final int index = i;
-            TextView button = buttons[i] = new TextView(host);
-            button.setGravity(Gravity.CENTER); button.setTextSize(18);
-            button.setBackground(Theme.AdaptiveRipple.circle());
-            rail.addView(button, new LinearLayout.LayoutParams(AndroidUtilities.dp(48), AndroidUtilities.dp(48)));
-            button.setOnClickListener(v -> {
-                if (!allowed()) return;
-                if (index == 0) toggleList();
-                else if (index == 3) closeSecond();
-                else { focus(index - 1); if (expanded) toggleList(); }
-            });
-        }
-        // A 48dp target centered in the 56dp rail; optical correction only, artwork unchanged.
-        buttons[0].setVisibility(View.GONE);
         crane = new ImageView(host);
         crane.setImageResource(R.drawable.foldegram_crane_mark);
         crane.setScaleType(ImageView.ScaleType.FIT_CENTER);
@@ -112,7 +112,27 @@ final class FoldegramHomeWorkspace {
         crane.setBackground(Theme.AdaptiveRipple.circle());
         crane.setOnClickListener(v -> { if (allowed()) toggleList(); });
         rail.addView(crane, 0, new LinearLayout.LayoutParams(AndroidUtilities.dp(48), AndroidUtilities.dp(48)));
-        buttons[3].setText("×"); buttons[3].setContentDescription(host.getString(R.string.FoldegramCloseTwoChats));
+        for (int i = 0; i < 2; i++) {
+            final int pane = i;
+            FrameLayout button = avatarButtons[i] = new FrameLayout(host);
+            button.setBackground(Theme.AdaptiveRipple.circle());
+            BackupImageView avatar = avatars[i] = new BackupImageView(host);
+            avatar.setRoundRadius(AndroidUtilities.dp(17));
+            button.addView(avatar, LayoutHelper.createFrame(34, 34, Gravity.CENTER));
+            rail.addView(button, new LinearLayout.LayoutParams(AndroidUtilities.dp(48), AndroidUtilities.dp(48)));
+            button.setOnClickListener(v -> {
+                if (!allowed()) return;
+                focus(pane);
+                if (expanded) toggleList();
+            });
+        }
+        closeButton = new ImageView(host);
+        closeButton.setImageResource(R.drawable.ic_close_white);
+        closeButton.setScaleType(ImageView.ScaleType.CENTER);
+        closeButton.setContentDescription(host.getString(R.string.FoldegramCloseTwoChats));
+        closeButton.setBackground(Theme.AdaptiveRipple.circle());
+        closeButton.setOnClickListener(v -> { if (choosing) cancelChooser(); else closeSecond(); });
+        rail.addView(closeButton, new LinearLayout.LayoutParams(AndroidUtilities.dp(48), AndroidUtilities.dp(48)));
         drop = new View(host) {
             @Override protected void onDraw(Canvas canvas) {
                 if (hovered < 0) return;
@@ -143,12 +163,12 @@ final class FoldegramHomeWorkspace {
         }
     }
 
-    boolean isTwo() { return two; }
+    boolean isTwo() { return two || choosing; }
     boolean owns(ChatActivity chat) { return chat != null && (chat.getParentLayout() == first || chat.getParentLayout() == second); }
     private INavigationLayout pane(int i) { return i == 0 ? first : second; }
     INavigationLayout current() {
-        if (listFocused || choosing || first.getFragmentStack().isEmpty()) return list;
-        return pane(two ? active : 0);
+        if (listFocused || first.getFragmentStack().isEmpty()) return list;
+        return pane(two || choosing ? active : 0);
     }
     private boolean allowed() {
         return !destroyed && LaunchActivity.isResumed && parent.getWindowVisibility() == View.VISIBLE
@@ -165,22 +185,67 @@ final class FoldegramHomeWorkspace {
                 && !chat.hasFoldegramPendingForward();
     }
     void open(ChatActivity source) {
-        if (!allowed() || !owns(source) || !compositionSafe(source.getParentLayout())) return;
+        if (!allowed() || !owns(source)) return;
+        if (!compositionSafe(source.getParentLayout())) {
+            Toast.makeText(host, R.string.FoldegramFinishComposition, Toast.LENGTH_LONG).show(); return;
+        }
+        if (choosing) { focus(1); return; }
         if (two) { focus(source.getParentLayout() == second ? 1 : 0); toggleList(); return; }
-        choosing = true; expanded = true; listFocused = true;
+        Bundle args = new Bundle();
+        args.putBoolean("onlySelect", true);
+        args.putBoolean("allowSwitchAccount", false);
+        args.putBoolean("canSelectTopics", true);
+        args.putInt("dialogsType", DialogsActivity.DIALOGS_TYPE_DEFAULT);
+        chooser = new DialogsActivity(args) {
+            @Override public View createView(Context context) {
+                View view = super.createView(context);
+                getActionBar().setTitle(host.getString(R.string.FoldegramChooseChatTitle));
+                return view;
+            }
+        };
+        chooser.setCurrentAccount(source.getCurrentAccount());
+        chooser.setDelegate((fragment, selected, message, param, notify, scheduleDate, repeat, topics) -> {
+            if (!choosing || !allowed() || selected.isEmpty()) return false;
+            org.telegram.messenger.MessagesStorage.TopicKey selection = selected.get(0);
+            Bundle chatArgs = FoldegramChatWindowActivity.argumentsForDialog(selection.dialogId, selection.topicId);
+            if (!MessagesController.getInstance(source.getCurrentAccount()).checkCanOpenChat(chatArgs, fragment)) return false;
+            ChatActivity chat = new ChatActivity(chatArgs);
+            chat.setCurrentAccount(source.getCurrentAccount());
+            if (selection.topicId != 0) org.telegram.ui.Components.Forum.ForumUtilities.applyTopic(chat, selection);
+            if (sameDialog(chat, first)) {
+                Toast.makeText(host, R.string.FoldegramChooseDifferentChat, Toast.LENGTH_SHORT).show(); return false;
+            }
+            // Keep the original chat/list mounted; replace only the right-side selection stack.
+            if (topics != null) topics.finishFragment(false);
+            present(second, new INavigationLayout.NavigationParams(chat).setRemoveLast(true));
+            return two;
+        });
+        if (!second.addFragmentToStack(chooser)) { chooser = null; return; }
+        choosing = true; expanded = false; listFocused = false; active = 1;
+        second.showLastFragment();
         AndroidUtilities.hideKeyboard(host.getCurrentFocus());
-        animateLayout();
+        updateRail(); animateLayout();
+    }
+    private void cancelChooser() {
+        if (!choosing) return;
+        choosing = false; chooser = null;
+        second.removeAllFragments(); active = 0; listFocused = expanded = false;
+        AndroidUtilities.hideKeyboard(host.getCurrentFocus());
+        updateRail(); animateLayout(); syncFocus();
     }
     private void toggleList() {
+        if (choosing) { cancelChooser(); return; }
         expanded = !expanded;
         listFocused = expanded;
-        if (!expanded) choosing = false;
         AndroidUtilities.hideKeyboard(host.getCurrentFocus());
         animateLayout();
     }
     private boolean sameDialog(ChatActivity a, INavigationLayout other) {
         BaseFragment b = other.getLastFragment();
-        return b instanceof ChatActivity && a.getDialogId() == ((ChatActivity) b).getDialogId();
+        long candidate = a.getDialogId();
+        // New ChatActivity instances resolve dialog_id only in onFragmentCreate.
+        if (candidate == 0 && a.getArguments() != null) candidate = FoldegramChatWindowActivity.dialogId(a.getArguments());
+        return b instanceof ChatActivity && candidate == ((ChatActivity) b).getDialogId();
     }
     /** Called before LaunchActivity's tablet routing can clear an existing stack. null = normal routing. */
     Boolean present(INavigationLayout origin, INavigationLayout.NavigationParams params) {
@@ -196,19 +261,20 @@ final class FoldegramHomeWorkspace {
         if (chat.getCurrentAccount() != UserConfig.selectedAccount || sameDialog(chat, pane(1 - target))) {
             Toast.makeText(host, R.string.FoldegramChooseDifferentChat, Toast.LENGTH_SHORT).show(); return false;
         }
-        if (!destination.getFragmentStack().isEmpty() && !compositionSafe(destination)) {
+        if (!choosing && !destination.getFragmentStack().isEmpty() && !compositionSafe(destination)) {
             Toast.makeText(host, R.string.FoldegramFinishComposition, Toast.LENGTH_LONG).show(); return false;
         }
         boolean opened = destination.presentFragment(params.setCheckPresentFromDelegate(false));
         if (opened) {
-            two = true; choosing = false; expanded = false; listFocused = false; active = target;
-            animateLayout(); syncFocus();
+            two = true; choosing = false; chooser = null; expanded = false; listFocused = false; active = target;
+            updateRail(); animateLayout(); syncFocus();
         }
         return false;
     }
     Boolean close(INavigationLayout layout) {
         if (layout != first && layout != second) return null;
         if (layout.getFragmentStack().size() > 1) return true;
+        if (choosing) { cancelChooser(); return false; }
         if (two) { closeSecond(); return false; }
         return null;
     }
@@ -226,7 +292,8 @@ final class FoldegramHomeWorkspace {
         if (!two && !choosing && !expanded) return false;
         if (!invoked) return true;
         if (drag != null) { cancelDrag(); return true; }
-        if (expanded || choosing) { expanded = choosing = listFocused = false; animateLayout(); return true; }
+        if (choosing) { second.onBackPressed(); return true; }
+        if (expanded) { expanded = listFocused = false; animateLayout(); return true; }
         pane(active).onBackPressed();
         return true;
     }
@@ -252,7 +319,7 @@ final class FoldegramHomeWorkspace {
         if (listView.isShown() && event.getX() >= listView.getLeft() && event.getX() < listView.getRight()) {
             listFocused = true; syncFocus(); return;
         }
-        for (int i = 0; i < (two ? 2 : 1); i++) {
+        for (int i = 0; i < (two || choosing ? 2 : 1); i++) {
             View v = pane(i).getView();
             if (v.isShown() && v.getWidth() > 0 && event.getX() >= v.getLeft() && event.getX() < v.getRight()) {
                 if (active != i || listFocused) focus(i);
@@ -260,13 +327,13 @@ final class FoldegramHomeWorkspace {
         }
     }
     private void focus(int target) {
-        if (target == 1 && !two) return;
+        if (target == 1 && !two && !choosing) return;
         if (active != target) {
             saveDraft(pane(active));
             AndroidUtilities.hideKeyboard(host.getCurrentFocus());
             if (host.getCurrentFocus() != null) host.getCurrentFocus().clearFocus();
         }
-        active = target; listFocused = false; syncFocus(); parent.requestLayout();
+        active = target; listFocused = false; syncFocus(); updateRail(); parent.requestLayout();
         host.checkSystemBarColors(true, true, true);
     }
     private void saveDraft(INavigationLayout layout) {
@@ -332,6 +399,10 @@ final class FoldegramHomeWorkspace {
             View v = pane(i).getView();
             if (v.isShown() && v.getWidth() > 0 && event.getX() >= v.getLeft() && event.getX() < v.getRight()) target = i;
         }
+        if (geometry != null && geometry.firstWidth > 0 && geometry.secondWidth > 0) {
+            int boundary = (first.getView().getRight() + second.getView().getLeft()) / 2;
+            if (Math.abs(event.getX() - boundary) <= AndroidUtilities.dp(12)) target = event.getX() < boundary ? 0 : 1;
+        }
         hovered = event.getAction() == DragEvent.ACTION_DRAG_EXITED ? -1 : target; drop.invalidate();
         if (event.getAction() != DragEvent.ACTION_DROP) return true;
         ClipData clip = event.getClipData();
@@ -386,49 +457,102 @@ final class FoldegramHomeWorkspace {
         two = true; active = state.getInt("active", 0) == 1 ? 1 : 0; expanded = state.getBoolean("expanded"); listFocused = expanded;
         parent.requestLayout();
     }
-    void pause() { cancelDrag(); saveDraft(first); saveDraft(second); second.onPause(); }
+    void pause() { cancelDrag(); stopMotion(true); saveDraft(first); saveDraft(second); second.onPause(); }
     void reset() {
-        cancelDrag(); if (animator != null) animator.cancel(); second.removeAllFragments();
+        cancelDrag(); stopMotion(true); chooser = null; second.removeAllFragments();
         two = expanded = choosing = listFocused = false; pendingRestore = null; active = 0; parent.requestLayout();
     }
-    void destroy() { pause(); reset(); destroyed = true; if (boundDialogs != null) boundDialogs.setFoldegramConversationDragListener(null); }
-    private void animateLayout() {
-        if (animator != null) animator.cancel();
-        previous = new int[]{list.getView().getWidth(), rail.getWidth(), first.getView().getLeft(), first.getView().getWidth(),
-                second.getView().getLeft(), second.getView().getWidth()};
-        if (two && previous[5] == 0) previous[4] = parent.getWidth();
-        progress = SharedConfig.animationsEnabled() ? 0 : 1;
-        if (progress == 0) {
-            animator = ValueAnimator.ofFloat(0, 1); animator.setDuration(220);
-            animator.setInterpolator(new android.view.animation.DecelerateInterpolator());
-            animator.addUpdateListener(a -> { progress = (float) a.getAnimatedValue(); parent.requestLayout(); });
-            animator.start();
+    void destroy() { pause(); reset(); destroyed = true; parent.removeCallbacks(focusSync); if (boundDialogs != null) boundDialogs.setFoldegramConversationDragListener(null); }
+    private View[] motionViews() { return new View[]{list.getView(), rail, first.getView(), second.getView()}; }
+    private void stopMotion(boolean settle) {
+        for (View v : motionViews()) {
+            v.animate().cancel();
+            if (settle) { v.setTranslationX(0); v.setAlpha(1); }
         }
+        if (settle) transitionPending = false;
+    }
+    private void animateLayout() {
+        View[] views = motionViews();
+        // Capture the actual visual position before cancellation, including interrupted translations.
+        for (int i = 0; i < views.length; i++) {
+            previousX[i] = views[i].getX(); previousAlpha[i] = views[i].getAlpha();
+            previousVisible[i] = views[i].getVisibility() == View.VISIBLE && views[i].getWidth() > 0;
+        }
+        stopMotion(false);
+        transitionPending = SharedConfig.animationsEnabled();
+        if (!transitionPending) stopMotion(true);
         parent.requestLayout();
     }
-    private int lerp(int index, int end) { return Math.round(previous[index] + (end - previous[index]) * progress); }
+    static float transitionOffset(float previousX, int nextLeft, boolean visible, int width, boolean fromRight) {
+        return (visible ? previousX : fromRight ? width : nextLeft) - nextLeft;
+    }
+    private void applyMotion(int width) {
+        if (!transitionPending) return;
+        transitionPending = false;
+        View[] views = motionViews();
+        for (int i = 0; i < views.length; i++) {
+            View v = views[i];
+            if (v.getVisibility() != View.VISIBLE) { v.setTranslationX(0); v.setAlpha(1); continue; }
+            v.setTranslationX(transitionOffset(previousX[i], v.getLeft(), previousVisible[i], width, i == 3));
+            v.setAlpha(previousVisible[i] ? previousAlpha[i] : 0);
+            // Final widths are measured once. Animate compositing properties only, never text scale
+            // or per-frame requestLayout; avoid snapshots of protected chat content.
+            v.animate().translationX(0).alpha(1).setDuration(200)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
+        }
+    }
+    private void updateRail() {
+        if (avatars[0] == null) return;
+        for (int i = 0; i < 2; i++) {
+            BaseFragment f = pane(i).getLastFragment();
+            long dialog = f instanceof ChatActivity ? ((ChatActivity) f).getDialogId() : 0;
+            int account = f != null ? f.getCurrentAccount() : UserConfig.selectedAccount;
+            String name = dialog != 0 ? DialogObject.getName(account, dialog) : host.getString(R.string.FoldegramChooseChatTitle);
+            avatarButtons[i].setContentDescription(host.getString(i == 0 ? R.string.FoldegramLeftPane : R.string.FoldegramRightPane, name));
+            avatarButtons[i].setSelected(i == active);
+            avatarButtons[i].setAlpha(i == active ? 1 : .72f);
+            long key = dialog ^ ((long) account << 56);
+            if (avatarKeys[i] == key) continue;
+            avatarKeys[i] = key;
+            MessagesController mc = MessagesController.getInstance(account);
+            TLObject peer = DialogObject.isUserDialog(dialog) ? mc.getUser(dialog)
+                    : DialogObject.isChatDialog(dialog) ? mc.getChat(-dialog) : null;
+            if (DialogObject.isEncryptedDialog(dialog)) {
+                TLRPC.EncryptedChat encrypted = mc.getEncryptedChat(DialogObject.getEncryptedChatId(dialog));
+                if (encrypted != null) peer = mc.getUser(encrypted.user_id);
+            }
+            AvatarDrawable fallback = new AvatarDrawable();
+            if (peer != null) fallback.setInfo(account, peer);
+            int type = dialog == UserConfig.getInstance(account).getClientUserId() ? AvatarDrawable.AVATAR_TYPE_SAVED
+                    : peer instanceof TLRPC.Chat ? (ChatObject.isChannel((TLRPC.Chat) peer) && !((TLRPC.Chat) peer).megagroup
+                    ? AvatarDrawable.AVATAR_TYPE_FILTER_CHANNELS : AvatarDrawable.AVATAR_TYPE_FILTER_GROUPS)
+                    : peer instanceof TLRPC.User ? (((TLRPC.User) peer).bot ? AvatarDrawable.AVATAR_TYPE_FILTER_BOTS
+                    : AvatarDrawable.AVATAR_TYPE_FILTER_CONTACTS) : AvatarDrawable.AVATAR_TYPE_OTHER_CHATS;
+            fallback.setAvatarType(type);
+            if (type == AvatarDrawable.AVATAR_TYPE_SAVED || peer == null) avatars[i].setImageDrawable(fallback);
+            else avatars[i].setImage(ImageLocation.getForUserOrChat(account, peer, ImageLocation.TYPE_SMALL), "50_50", fallback, peer);
+        }
+    }
     void measure(int width, int height, int topInset, int bottomInset) {
+        if (lastWidth != 0 && (lastWidth != width || lastHeight != height)) stopMotion(true);
+        lastWidth = width; lastHeight = height;
         bindList();
         parent.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
         geometry = new FoldegramHomeGeometry(width, AndroidUtilities.dp(600), AndroidUtilities.dp(56),
-                AndroidUtilities.dp(320), AndroidUtilities.dp(8), two, expanded || choosing, !first.getFragmentStack().isEmpty(), active);
-        measure(list.getView(), lerp(0, geometry.list), height);
-        measure(rail, lerp(1, geometry.rail), height);
-        measure(first.getView(), lerp(3, geometry.firstWidth), height);
-        measure(second.getView(), lerp(5, geometry.secondWidth), height);
+                AndroidUtilities.dp(320), AndroidUtilities.dp(2), two || choosing, expanded, !first.getFragmentStack().isEmpty(), active);
+        measure(list.getView(), geometry.list, height);
+        measure(rail, geometry.rail, height);
+        measure(first.getView(), geometry.firstWidth, height);
+        measure(second.getView(), geometry.secondWidth, height);
         measure(drop, width, height);
         rail.setPadding(0, topInset, 0, bottomInset);
         rail.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
         crane.setColorFilter(Theme.getColor(Theme.key_telegram_color_dialogsLogo));
-        for (TextView b : buttons) b.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText));
-        for (int i = 0; i < 2; i++) {
-            BaseFragment f = pane(i).getLastFragment();
-            String name = f instanceof ChatActivity ? DialogObject.getName(f.getCurrentAccount(), ((ChatActivity) f).getDialogId()) : "";
-            buttons[i + 1].setText(name == null || name.isEmpty() ? "·" : name.substring(0, name.offsetByCodePoints(0, 1)));
-            buttons[i + 1].setContentDescription(host.getString(i == 0 ? R.string.FoldegramLeftPane : R.string.FoldegramRightPane, name));
-            buttons[i + 1].setSelected(i == active);
-        }
+        closeButton.setColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText));
+        int color = Theme.getColor(Theme.key_avatar_backgroundSaved);
+        if (railColor != color) { railColor = color; avatarKeys[0] = avatarKeys[1] = Long.MIN_VALUE; updateRail(); }
     }
+
     private void measure(View v, int w, int h) {
         if (v != drop) {
             // INVISIBLE preserves attached views, scroll, search and draft state; no fragment reconstruction.
@@ -441,11 +565,12 @@ final class FoldegramHomeWorkspace {
         if (geometry == null) return;
         list.getView().layout(rail.getMeasuredWidth(), 0, rail.getMeasuredWidth() + list.getView().getMeasuredWidth(), height);
         rail.layout(0, 0, rail.getMeasuredWidth(), height);
-        int x = lerp(2, geometry.firstX);
+        int x = geometry.firstX;
         first.getView().layout(x, 0, x + first.getView().getMeasuredWidth(), height);
-        x = lerp(4, geometry.secondX);
+        x = geometry.secondX;
         second.getView().layout(x, 0, x + second.getView().getMeasuredWidth(), height);
         drop.layout(0, 0, width, height);
-        parent.post(this::syncFocus);
+        applyMotion(width);
+        if (!focusSyncQueued) { focusSyncQueued = true; parent.post(focusSync); }
     }
 }

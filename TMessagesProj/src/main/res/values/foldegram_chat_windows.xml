@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="FoldegramChooseChatTitle">Choose a chat</string>
     <string name="FoldegramChooseDifferentChat">Choose a different conversation for the other pane</string>
     <string name="FoldegramReopenChats">This conversation is unavailable. Reopen it from your chat list and try again.</string>
     <string name="FoldegramCloseTwoChats">Close two-chat workspace</string>

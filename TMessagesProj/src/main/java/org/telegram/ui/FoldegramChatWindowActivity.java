@@ -270,7 +270,7 @@ public class FoldegramChatWindowActivity extends BasePermissionsActivity impleme
         return argumentsForDialog(chat.getDialogId(), chat.isTopic ? chat.getTopicId() : 0);
     }
 
-    private static long dialogId(Bundle args) {
+    static long dialogId(Bundle args) {
         int encrypted = args.getInt("enc_id", 0);
         if (encrypted != 0) {
             return DialogObject.makeEncryptedDialogId(encrypted);

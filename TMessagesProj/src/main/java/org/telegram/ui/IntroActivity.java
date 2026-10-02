@@ -603,6 +603,7 @@ public class IntroActivity extends BaseFragment implements NotificationCenter.No
 
             container.addView(frameLayout, 0);
 
+            headerTextView.setTypeface(position == 0 ? org.telegram.ui.Components.FoldegramWordmark.typeface() : AndroidUtilities.bold());
             headerTextView.setText(titles[position]);
             messageTextView.setText(AndroidUtilities.replaceTags(messages[position]));
 

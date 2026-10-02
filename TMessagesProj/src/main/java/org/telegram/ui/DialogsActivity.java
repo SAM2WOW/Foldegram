@@ -3522,7 +3522,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 // 9.558..52.174) inside the 64-unit mark, independently of text baseline/RTL.
                 craneSpan.translate(dp(26) * (32f - 29.7975f) / 64f, dp(26) * (32f - 30.866f) / 64f);
                 ssb.setSpan(craneSpan, 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                actionBar.setTitle(ssb, statusDrawable);
+                actionBar.setTitle(org.telegram.ui.Components.FoldegramWordmark.style(ssb), statusDrawable);
                 updateStatus(UserConfig.getInstance(currentAccount).getCurrentUser(), false);
             }
             if (folderId == 0) {

@@ -159,6 +159,7 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
     AnimatedTextView titleView;
     ActionBarAnimatedSubtitleOverlayContainer subtitleOverlayContainer;
     ImageView telegramLogoView;
+    private boolean foldegramCompactWordmark;
     ImageView emojiStatusView;
     AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable statusDrawable;
     boolean drawCircleForce;
@@ -335,13 +336,12 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
         telegramLogoView = new ImageView(context);
         telegramLogoView.setContentDescription(getString(R.string.AppName));
         telegramLogoView.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        telegramLogoView.setImageResource(R.drawable.foldegram_crane_mark);
+        telegramLogoView.setImageResource(R.drawable.foldegram_wordmark);
         telegramLogoView.setColorFilter(getTextLogoColor(), PorterDuff.Mode.MULTIPLY);
         telegramLogoView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
         telegramLogoView.setFocusableInTouchMode(true);
-        // The approved crane is an icon, not the upstream 90dp wordmark. Tight bounds
-        // keep it beside the collapsed avatars instead of floating in the middle.
-        addView(telegramLogoView, LayoutHelper.createFrame(26, 26));
+        // Exact outlined 650/100/24 wordmark; tight intrinsic bounds preserve start alignment.
+        addView(telegramLogoView, LayoutHelper.createFrame(138, 26));
 
         statusDrawable = new AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable(null, dp(26));
         statusDrawable.center = true;
@@ -943,8 +943,17 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
             titleView.setTranslationX(lastViewRight);
             titleView.getDrawable().setRightPadding(lastViewRight - dp(12) + actionBar.menu.getVisibleItemsMeasuredWidthWithAlpha() * progress);
 
-            final float craneOpticalX = dp(24) * (32f - 29.7975f) / 64f;
-            final float craneOpticalY = dp(24) * (32f - 30.866f) / 64f;
+            final float room = getWidth() - titleView.getTranslationX() - actionBar.menu.getVisibleItemsMeasuredWidthWithAlpha() - dp(48);
+            final boolean compact = room < dp(foldegramCompactWordmark ? 146 : 138);
+            if (compact != foldegramCompactWordmark) {
+                foldegramCompactWordmark = compact;
+                telegramLogoView.setImageResource(compact ? R.drawable.foldegram_crane_mark : R.drawable.foldegram_wordmark);
+                ViewGroup.LayoutParams params = telegramLogoView.getLayoutParams();
+                params.width = dp(compact ? 26 : 138);
+                telegramLogoView.setLayoutParams(params);
+            }
+            final float craneOpticalX = compact ? dp(24) * (32f - 29.7975f) / 64f : 0;
+            final float craneOpticalY = compact ? dp(24) * (32f - 30.866f) / 64f : 0;
             // The title's native placement already reserves story avatars and menu space.
             // Use the same start anchor in RTL; never mirror the crane polygons themselves.
             telegramLogoView.setTranslationX(titleView.getTranslationX() + craneOpticalX);

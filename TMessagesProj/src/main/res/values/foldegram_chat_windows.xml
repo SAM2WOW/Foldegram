@@ -15,4 +15,6 @@
     <string name="FoldegramSendImageAs">Send image as</string>
     <string name="FoldegramCompressedPhoto">Photo · compressed</string>
     <string name="FoldegramOriginalFile">File · original quality</string>
+    <string name="FoldegramDragForumHint">Tap this chat to choose a forum topic</string>
+    <string name="FoldegramDragStartFailed">Could not start dragging. Tap a conversation to open it instead.</string>
 </resources>

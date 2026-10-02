@@ -4437,6 +4437,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                         showPremiumBlockedToast(view, ((DialogCell) view).getDialogId());
                         return true;
                     }
+                    if (startFoldegramConversationDrag(view)) return true;
                     if (filterTabsView != null && filterTabsView.getVisibility() == View.VISIBLE && filterTabsView.isEditing()) {
                         return false;
                     }
@@ -11332,6 +11333,23 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         }
     }
 
+    public interface FoldegramConversationDragListener {
+        boolean onStart(View row, long dialogId);
+    }
+
+    private FoldegramConversationDragListener foldegramConversationDragListener;
+
+    public void setFoldegramConversationDragListener(FoldegramConversationDragListener listener) {
+        foldegramConversationDragListener = listener;
+    }
+
+    private boolean startFoldegramConversationDrag(View row) {
+        if (!onlySelect || foldegramConversationDragListener == null) return false;
+        long dialogId = row instanceof DialogCell ? ((DialogCell) row).getDialogId()
+                : row instanceof ProfileSearchCell ? ((ProfileSearchCell) row).getDialogId() : 0;
+        return dialogId != 0 && foldegramConversationDragListener.onStart(row, dialogId);
+    }
+
     public void setDelegate(DialogsActivityDelegate dialogsActivityDelegate) {
         delegate = dialogsActivityDelegate;
     }
@@ -13256,6 +13274,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     showPremiumBlockedToast(view, ((ProfileSearchCell) view).getDialogId());
                     return true;
                 }
+                if (startFoldegramConversationDrag(view)) return true;
                 return onItemLongClick(searchViewPager.searchListView, view, position, x, y, -1, searchViewPager.dialogsSearchAdapter);
             }
 

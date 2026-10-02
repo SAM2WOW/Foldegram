@@ -449,11 +449,16 @@ final class FoldegramChatDragDrop {
             paint.setColor(accent);
             paint.setAlpha(25);
             paint.setStyle(Paint.Style.FILL);
-            canvas.drawRect(getBounds(), paint);
-            paint.setAlpha(255);
+            float radius = AndroidUtilities.dp(12);
+            canvas.drawRoundRect(getBounds().left, getBounds().top, getBounds().right, getBounds().bottom, radius, radius, paint);
             paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(AndroidUtilities.dp(2));
-            canvas.drawRect(1, 1, getBounds().right - 1, getBounds().bottom - 1, paint);
+            for (int layer = 3; layer >= 1; layer--) {
+                paint.setAlpha(layer == 1 ? 255 : 25);
+                paint.setStrokeWidth(AndroidUtilities.dp(layer == 1 ? 2 : layer * 3));
+                float inset = AndroidUtilities.dp(5);
+                canvas.drawRoundRect(inset, inset, getBounds().right - inset, getBounds().bottom - inset, radius, radius, paint);
+            }
+            paint.setAlpha(255);
             paint.setStyle(Paint.Style.FILL);
             paint.setTextSize(AndroidUtilities.dp(16));
             String label = "Drop to preview";

@@ -28,3 +28,15 @@ One dropped image offers **Photo · compressed** or **File · original quality**
 4. Repeat image/text drops into each Foldegram workspace pane, including the initially inactive pane. Check lock/hidden/secret/read-only targets, draft preservation, preview cancel and backgrounding during import. Confirm no send happens before Send and no send happens after cancelling a pending paid confirmation by leaving/locking the chat.
 
 Host checks, assembly, lint and APK/resource/signature/alignment inspection are not physical screenshot, Google Photos, touch, WindowManager or render validation. No device is attached in this executor.
+
+## Sidebar drag-to-pane and lighter pane treatment
+
+The existing searchable chats/contacts overlay now also opens through a 48dp tap handle on the left. An inward horizontal swipe can start in the narrow strip just beyond Android's reported system-gesture inset; the app does not exclude or claim the OS back-edge area. A child may still own a conflicting gesture, so the tap handle remains the reliable alternative. No extra toolbar is added.
+
+Long-press a conversation row or a person in search, then drag it onto a pane. The picker becomes temporarily invisible while staying attached, exposing both targets. The hovered pane gets a soft rounded outline; releasing opens the conversation only in that pane through normal navigation. Cancelling restores the same picker/search position without changing chats. On a folded screen, the visible active pane is the target; choose the destination in the sidebar first. Forum rows retain tap-to-select-topic behavior rather than guessing a topic on drag.
+
+The drag carries an expiring random token and process-local state, never serialized chat contents or a global drag grant. Account/user identity, lock, lifetime, target availability and pending composition are checked. Duplicate opposite-pane conversations are rejected. Opening a secret/protected chat retains its normal capture policy.
+
+Pane views use native rounded clipping (12dp corners), an 8dp wide-layout gutter and lightweight layered target strokes instead of a persistent blur pass. Accepted navigation uses a small scale/overshoot pulse plus the existing native chat transition. The pulse and sidebar slide respect SharedConfig.animationsEnabled(); reduced-motion settings therefore suppress these added animations.
+
+Additional phone QA: tap the handle, swipe inward outside the OS edge, verify Android Back still works, long-press a search result/contact, hover both panes, cancel and retry/drop on each. Repeat with drafts, a protected chat, account/logout/lock, fold/unfold, font scaling and animations disabled. Check rounded clipping, gutter and message-space use on the actual Fold. These gestures and rendering effects were not tested on a physical device here.

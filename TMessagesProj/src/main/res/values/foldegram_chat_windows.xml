@@ -12,4 +12,7 @@
     <string name="FoldegramCloseSidebar">Close conversation sidebar</string>
     <string name="FoldegramLeftPane">Left pane: %1$s</string>
     <string name="FoldegramRightPane">Right pane: %1$s</string>
+    <string name="FoldegramSendImageAs">Send image as</string>
+    <string name="FoldegramCompressedPhoto">Photo · compressed</string>
+    <string name="FoldegramOriginalFile">File · original quality</string>
 </resources>

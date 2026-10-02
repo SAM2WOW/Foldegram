@@ -7,6 +7,8 @@ package org.telegram.ui;
 import android.content.ClipData;
 import android.content.ClipDescription;
 import android.content.ContentResolver;
+import android.content.res.AssetFileDescriptor;
+import java.io.InputStream;
 import android.content.pm.ProviderInfo;
 import android.database.Cursor;
 import android.provider.OpenableColumns;
@@ -36,7 +38,6 @@ import org.telegram.messenger.MessageObject;
 import org.telegram.ui.Cells.ChatMessageCell;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.ref.WeakReference;
@@ -174,7 +175,10 @@ final class FoldegramChatDragDrop {
                 owner.showFoldegramDropNotice("Drop up to 10 files or text items at a time");
                 return false;
             }
-            if (!owner.activateFoldegramDropTarget()) return false;
+            if (!owner.activateFoldegramDropTarget()) {
+                owner.showFoldegramDropNotice("Open an unlocked, writable chat to receive this drop");
+                return false;
+            }
             ClipData.Item item = data.getItemAt(0);
             if (data.getDescription().hasMimeType(MESSAGE_MIME)) {
                 if (!isSingleItem(data.getItemCount())) return false;
@@ -197,24 +201,34 @@ final class FoldegramChatDragDrop {
                     ClipData.Item entry = data.getItemAt(i);
                     Uri content = entry.getUri();
                     if (entry.getIntent() != null || content == null || !ContentResolver.SCHEME_CONTENT.equals(content.getScheme())) return false;
-                    // Reject every self-provider; never export app-private content through a drop.
-                    ProviderInfo provider = owner.getParentActivity().getPackageManager().resolveContentProvider(content.getAuthority(), 0);
-                    if (provider == null || provider.applicationInfo == null || provider.applicationInfo.uid == Process.myUid()) return false;
                     uris.add(content);
                 }
                 DragAndDropPermissions permissions = owner.getParentActivity().requestDragAndDropPermissions(event);
-                if (permissions == null) {
-                    owner.showFoldegramDropNotice("The source app did not grant access to this file");
-                    return false;
-                }
-                imageImport = new ImageImport(uris, permissions);
+                // A null transient-grant token is possible when this exact URI is already readable.
+                // The provider still enforces read access; never request broader/persistent access.
+                boolean importOwnsGrant = false;
                 try {
-                    imageImport.start();
-                } catch (RuntimeException e) {
-                    cancelImport();
-                    throw e;
+                    // Taking the URI grant first makes its provider visible to package queries.
+                    // Resolving before taking it can silently reject Photos under package visibility.
+                    for (Uri content : uris) {
+                        ProviderInfo provider = owner.getParentActivity().getPackageManager().resolveContentProvider(content.getAuthority(), 0);
+                        if (provider == null || provider.applicationInfo == null || provider.applicationInfo.uid == Process.myUid()) {
+                            owner.showFoldegramDropNotice("This provider cannot share that file with Foldegram");
+                            return false;
+                        }
+                    }
+                    imageImport = new ImageImport(uris, permissions);
+                    importOwnsGrant = true;
+                    try {
+                        imageImport.start();
+                    } catch (RuntimeException e) {
+                        cancelImport();
+                        throw e;
+                    }
+                    return true;
+                } finally {
+                    if (!importOwnsGrant && permissions != null) permissions.release();
                 }
-                return true;
             }
             // No URI coercion, HTML, Intent execution, remote downloads, or file:// access.
             StringBuilder text = new StringBuilder();
@@ -299,7 +313,7 @@ final class FoldegramChatDragDrop {
                     } else if (copies.isEmpty()) {
                         owner.showFoldegramDropNotice("Could not open this file. The source must grant access; the limit is 100 MB");
                     } else {
-                        if (copies.size() == 1 && isSupportedImage(mime)) owner.stageFoldegramImage(copies.get(0));
+                        if (copies.size() == 1 && isSupportedImage(mime)) owner.chooseFoldegramImageMode(copies.get(0));
                         else owner.stageFoldegramFiles(copies);
                     }
                 });
@@ -323,9 +337,20 @@ final class FoldegramChatDragDrop {
             File copy = new File(privateFolder, displayName);
             boolean success = false;
             try {
-                descriptor = resolver.openFileDescriptor(uri, "r", cancellation);
-                if (descriptor == null || cancelled || AndroidUtilities.isInternalUri(descriptor.getFd())) throw new IOException("Image access refused");
-                try (FileInputStream in = new ParcelFileDescriptor.AutoCloseInputStream(descriptor); FileOutputStream out = new FileOutputStream(copy)) {
+                // Photos/cloud providers may expose a virtual/typed asset or a file subsection.
+                // AssetFileDescriptor streams preserve the offset/length; raw FileDescriptor streams do not.
+                AssetFileDescriptor asset;
+                try {
+                    asset = resolver.openTypedAssetFileDescriptor(uri,
+                            mime != null ? mime : "*/*", null, cancellation);
+                } catch (java.io.FileNotFoundException unsupportedTypedStream) {
+                    asset = resolver.openAssetFileDescriptor(uri, "r", cancellation);
+                }
+                if (asset == null) throw new IOException("File access refused");
+                descriptor = asset.getParcelFileDescriptor();
+                try (AssetFileDescriptor grantedAsset = asset) {
+                if (cancelled || AndroidUtilities.isInternalUri(descriptor.getFd())) throw new IOException("Image access refused");
+                try (InputStream in = grantedAsset.createInputStream(); FileOutputStream out = new FileOutputStream(copy)) {
                     byte[] buffer = new byte[32768];
                     long total = 0;
                     long started = SystemClock.elapsedRealtime();
@@ -338,11 +363,17 @@ final class FoldegramChatDragDrop {
                     if (total == 0) throw new IOException("Empty file");
                     copiedBytes += total;
                 }
-                if (isSupportedImage(mime)) {
+                }
+                if (mime == null || mime.startsWith("image/") || "application/octet-stream".equals(mime)) {
                     BitmapFactory.Options bounds = new BitmapFactory.Options();
                     bounds.inJustDecodeBounds = true;
                     BitmapFactory.decodeFile(copy.getAbsolutePath(), bounds);
-                    if (!isSupportedImage(bounds.outMimeType) || !isSupportedImageDimensions(bounds.outWidth, bounds.outHeight)) throw new IOException("Invalid image dimensions");
+                    if (isSupportedImage(bounds.outMimeType)) {
+                        if (!isSupportedImageDimensions(bounds.outWidth, bounds.outHeight)) throw new IOException("Invalid image dimensions");
+                        mime = bounds.outMimeType;
+                    } else if (mime != null && mime.startsWith("image/") && !"image/gif".equals(mime)) {
+                        throw new IOException("Unsupported image format");
+                    }
                 }
                 if (cancelled) throw new IOException("Image import cancelled");
                 success = true;
@@ -374,7 +405,7 @@ final class FoldegramChatDragDrop {
 
         private void release() {
             if (released.compareAndSet(false, true)) {
-                try { permissions.release(); } catch (RuntimeException e) { FileLog.e(e); }
+                try { if (permissions != null) permissions.release(); } catch (RuntimeException e) { FileLog.e(e); }
             }
         }
     }
@@ -407,7 +438,8 @@ final class FoldegramChatDragDrop {
     }
 
     private static boolean isSupportedImage(String mime) {
-        return "image/jpeg".equals(mime) || "image/png".equals(mime) || "image/webp".equals(mime);
+        return "image/jpeg".equals(mime) || "image/png".equals(mime) || "image/webp".equals(mime)
+                || "image/heic".equals(mime) || "image/heif".equals(mime) || "image/avif".equals(mime);
     }
 
     static final class DropHighlight extends Drawable {

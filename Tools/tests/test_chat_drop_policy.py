@@ -47,7 +47,8 @@ public class DropPolicyRegressionTest {
         int getWindowVisibility() { return windowVisibility; }
     }
     static class Activity {
-        boolean finishing, destroyed;
+        boolean finishing, destroyed, multiWindow;
+        boolean isInMultiWindowMode() { return multiWindow; }
         boolean isFinishing() { return finishing; }
         boolean isDestroyed() { return destroyed; }
     }
@@ -214,7 +215,11 @@ public class DropPolicyRegressionTest {
         resetGlobals(); ChatActivity chat = new ChatActivity();
         check(chat.canAcceptFoldegramDrop(true), "visible writable chat");
         chat.paused = true; check(!chat.canAcceptFoldegramDrop(false), "paused target");
-        check(chat.canReceiveFoldegramDrag(false), "inactive visible pane receives start without staging"); chat.paused = false;
+        check(chat.canReceiveFoldegramDrag(false), "inactive visible pane receives start without staging");
+        chat.activity.multiWindow = true; check(chat.canAcceptFoldegramDrop(true), "visible paused Android split-screen target");
+        chat.fragmentView.shown = false; check(!chat.canAcceptFoldegramDrop(true), "split-screen never overrides visibility");chat.fragmentView.shown=true;
+        SharedConfig.appLocked=true; check(!chat.canAcceptFoldegramDrop(true), "split-screen never overrides lock");resetGlobals();
+        chat.activity.multiWindow=false;chat.paused=false;
         chat.parentLayout.top = new Object(); check(!chat.canAcceptFoldegramDrop(false), "covered target"); chat.parentLayout.top = chat;
         chat.fragmentView.shown = false; check(!chat.canAcceptFoldegramDrop(false), "hidden pane"); chat.fragmentView.shown = true;
         chat.fragmentView.windowVisibility = 8; check(!chat.canAcceptFoldegramDrop(false), "hidden window"); chat.fragmentView.windowVisibility = 0;
@@ -300,9 +305,16 @@ class DropPolicyTest(unittest.TestCase):
         self.assertNotIn("forwardMessages(", forward)
         image = method(CHAT, "void stageFoldegramImage(")
         callback = method(image, "public void sendButtonPressed(")
-        self.assertEqual(image.count("sendMedia("), 1)
-        self.assertIn("sendMedia(", callback)
-        self.assertIn("!canAcceptFoldegramDrop(true)", callback)
+        self.assertNotIn("sendMedia(", image)
+        self.assertIn("prepareSendingPhoto(", callback)
+        self.assertIn("prepareSendingDocuments(", callback)
+        self.assertIn("!canAcceptFoldegramDrop(!asDocument)", callback)
+        self.assertIn("foldegramPendingFiles != pending", callback)
+        self.assertIn("ensurePaidMessageConfirmation", callback)
+        choice = method(CHAT, "void chooseFoldegramImageMode(")
+        self.assertNotIn("prepareSending", choice)
+        self.assertIn("stageFoldegramImage(file, which == 1)", choice)
+        self.assertIn("viewer.openPhotoForSelect(photos, 0, 0, originalFile", image)
         self.assertIn("cancelFoldegramPendingDrop();", method(CHAT, "public void onPause("))
         self.assertIn("cancelFoldegramPendingDrop();", method(CHAT, "protected void onVisibilityChanged("))
         self.assertIn("cancelFoldegramPendingDrop();", method(CHAT, "protected void onWindowVisibilityChanged("))
@@ -310,12 +322,18 @@ class DropPolicyTest(unittest.TestCase):
         self.assertIn("permissions.release()", DROP)
         self.assertIn("finally {\n                    AndroidUtilities.cancelRunOnUIThread(timeout);\n                    release();", DROP)
         self.assertIn("provider.applicationInfo.uid == Process.myUid()", DROP)
+        drop = method(DROP, "private boolean drop(")
+        self.assertLess(drop.index("requestDragAndDropPermissions(event)"), drop.index("resolveContentProvider("))
+        self.assertIn("if (!importOwnsGrant && permissions != null) permissions.release()", drop)
         self.assertIn("item.getIntent() != null", DROP)
         self.assertIn("UUID.randomUUID()", DROP)
         self.assertNotIn("takePersistableUriPermission", DROP)
         dispatch = method(CHAT, "public boolean dispatchDragEvent(")
         self.assertIn("foldegramDropSurface.dispatchDragEvent(event)", dispatch)
-        self.assertIn("foldegramDropSurface.setOnDragListener", CHAT)
+        self.assertIn("receiver.setOnDragListener", CHAT)
+        self.assertIn("foldegramDropSurface = new FrameLayout(context)", CHAT)
+        self.assertIn("openTypedAssetFileDescriptor", DROP)
+        self.assertIn("grantedAsset.createInputStream()", DROP)
         self.assertIn("canStartMessageDrag(owner)", DROP)
         self.assertIn("null, 0)", DROP)
         self.assertNotIn("View.DRAG_FLAG_GLOBAL", DROP)

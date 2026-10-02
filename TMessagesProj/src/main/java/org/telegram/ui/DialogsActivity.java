@@ -3515,7 +3515,13 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 logoDrawable.setBounds(0, 0, dp(26), dp(26));
                 logoDrawable.setColorFilter(getThemedColor(Theme.key_telegram_color_dialogsLogo), PorterDuff.Mode.MULTIPLY);
                 SpannableStringBuilder ssb = new SpannableStringBuilder("  " + getString(R.string.AppName));
-                ssb.setSpan(new ImageSpan(logoDrawable), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                ColoredImageSpan craneSpan = new ColoredImageSpan(logoDrawable, ColoredImageSpan.ALIGN_CENTER);
+                craneSpan.setSize(dp(26));
+                craneSpan.recolorDrawable = false;
+                // Preserve the approved polygons; center their visible bounds (3.668..55.927,
+                // 9.558..52.174) inside the 64-unit mark, independently of text baseline/RTL.
+                craneSpan.translate(dp(26) * (32f - 29.7975f) / 64f, dp(26) * (32f - 30.866f) / 64f);
+                ssb.setSpan(craneSpan, 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 actionBar.setTitle(ssb, statusDrawable);
                 updateStatus(UserConfig.getInstance(currentAccount).getCurrentUser(), false);
             }
@@ -11344,7 +11350,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     }
 
     private boolean startFoldegramConversationDrag(View row) {
-        if (!onlySelect || foldegramConversationDragListener == null) return false;
+        if (foldegramConversationDragListener == null) return false;
         long dialogId = row instanceof DialogCell ? ((DialogCell) row).getDialogId()
                 : row instanceof ProfileSearchCell ? ((ProfileSearchCell) row).getDialogId() : 0;
         return dialogId != 0 && foldegramConversationDragListener.onStart(row, dialogId);

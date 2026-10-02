@@ -345,6 +345,56 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     private boolean tabletFullSize;
     // The mode of this activity's attached hierarchy, not the process-wide resource cache.
     private boolean tabletLayout;
+    private FoldegramHomeWorkspace foldegramHome;
+    private final android.util.SparseArray<BaseFragment> foldegramResultOwners = new android.util.SparseArray<>();
+
+    private static boolean isFoldegramMediaResult(int requestCode) {
+        return requestCode == 0 || requestCode == 1 || requestCode == 2
+                || requestCode == 14 || requestCode == 21 || requestCode == 28;
+    }
+
+    @Override
+    public void startActivityForResult(Intent intent, int requestCode, Bundle options) {
+        if (foldegramHome != null && foldegramHome.isTwo() && isFoldegramMediaResult(requestCode)) {
+            BaseFragment owner = foldegramHome.current().getLastFragment();
+            if (owner != null) foldegramResultOwners.put(requestCode, owner);
+        }
+        try {
+            super.startActivityForResult(intent, requestCode, options);
+        } catch (RuntimeException e) {
+            foldegramResultOwners.remove(requestCode);
+            throw e;
+        }
+    }
+
+
+    private static boolean isTabletLayout() {
+        return instance != null && instance.foldegramHome != null || AndroidUtilities.isTablet() || AndroidUtilities.isFold();
+    }
+
+    boolean foldegramHasModal() {
+        return passcodeDialog != null && passcodeDialog.passcodeView.getVisibility() == View.VISIBLE
+                || layersActionBarLayout != null && !layersActionBarLayout.getFragmentStack().isEmpty();
+    }
+
+    public boolean openFoldegramHome(ChatActivity source) {
+        if (foldegramHome == null || !foldegramHome.owns(source)) return false;
+        foldegramHome.open(source);
+        return true;
+    }
+
+    boolean ownsFoldegramChat(ChatActivity source) {
+        return foldegramHome != null && foldegramHome.owns(source);
+    }
+
+    boolean activateFoldegramChat(ChatActivity source) {
+        return foldegramHome != null && foldegramHome.activate(source);
+    }
+
+    boolean canDragFoldegramChat(ChatActivity source) {
+        return foldegramHome != null && foldegramHome.canDragMessage(source);
+    }
+
     private final Runnable refreshWindowLayoutRunnable = () -> refreshWindowLayout("windowSizeChanged");
 
     private String loadingThemeFileName;
@@ -664,6 +714,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         checkLayout();
         checkSystemBarColors();
         handleIntent(getIntent(), false, savedInstanceState != null, false, null, true, true);
+        if (foldegramHome != null) foldegramHome.restore(savedInstanceState);
         try {
             String os1 = Build.DISPLAY;
             String os2 = Build.USER;
@@ -759,7 +810,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                             locked = false;
                         }
 
-                        if (AndroidUtilities.isTablet()) {
+                        if (isTabletLayout()) {
                             onBackPressed();
                             return;
                         }
@@ -780,7 +831,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     }
 
                     private void onBackStartedInternal(BackEvent backEvent) {
-                        if (AndroidUtilities.isTablet()) return;
+                        if (isTabletLayout()) return;
                         if (!onBackPressed(false)) return;
                         if (actionBarLayout != null) {
                             boolean started = actionBarLayout.onBackStarted(backEvent.getTouchX(), backEvent.getTouchY());
@@ -807,7 +858,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
                         final float fixedProgress = Math.max(0, progress - LAZY_START) / (1 - LAZY_START);
 
-                        if (AndroidUtilities.isTablet()) return;
+                        if (isTabletLayout()) return;
                         if (actionBarLayout != null) {
                             actionBarLayout.onBackProgress(fixedProgress);
                         }
@@ -822,7 +873,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                             locked = false;
                         }
 
-                        if (AndroidUtilities.isTablet()) return;
+                        if (isTabletLayout()) return;
                         if (actionBarLayout != null) {
                             actionBarLayout.onBackCancelled();
                         }
@@ -838,7 +889,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 onBackInvokedCallback = new OnBackInvokedCallback() {
                     @Override
                     public void onBackInvoked() {
-                        if (AndroidUtilities.isTablet()) {
+                        if (isTabletLayout()) {
                             onBackPressed();
                             return;
                         }
@@ -917,7 +968,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         if (i != -1) {
             drawerLayoutContainer.removeViewAt(i);
         }
-        if (AndroidUtilities.isTablet()) {
+        if (isTabletLayout()) {
             getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
 
             launchLayout = new RelativeLayout(this) {
@@ -955,7 +1006,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
                     // checkLayout() owns pane mode and fragment migration together. Do not
                     // switch only the geometry here and leave a chat in an unmeasured pane.
-                    if (!tabletFullSize) {
+                    if (foldegramHome != null) {
+                        foldegramHome.measure(width, height, insets.top, insets.bottom);
+                    } else if (!tabletFullSize) {
                         final int leftWidth = Math.min(width, AndroidUtilities.getTabletLeftFragmentSize(width, insets.left, insets.right));
                         actionBarLayout.getView().measure(MeasureSpec.makeMeasureSpec(leftWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
                         rightActionBarLayout.getView().measure(MeasureSpec.makeMeasureSpec(width - leftWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
@@ -976,7 +1029,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 protected void onLayout(boolean changed, int l, int t, int r, int b) {
                     final int width = getMeasuredWidth();
                     final int height = getMeasuredHeight();
-                    if (!tabletFullSize) {
+                    if (foldegramHome != null) {
+                        foldegramHome.layout(width, height);
+                    } else if (!tabletFullSize) {
                         final int leftWidth = Math.min(width, AndroidUtilities.getTabletLeftFragmentSize(width, insets.left, insets.right));
                         actionBarLayout.getView().layout(0, 0, actionBarLayout.getView().getMeasuredWidth(), actionBarLayout.getView().getMeasuredHeight());
                         rightActionBarLayout.getView().layout(leftWidth, 0, leftWidth + rightActionBarLayout.getView().getMeasuredWidth(), rightActionBarLayout.getView().getMeasuredHeight());
@@ -988,6 +1043,17 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     layersActionBarLayout.getView().layout(x, y, x + layersActionBarLayout.getView().getMeasuredWidth(), y + layersActionBarLayout.getView().getMeasuredHeight());
                     backgroundTablet.layout(0, 0, backgroundTablet.getMeasuredWidth(), backgroundTablet.getMeasuredHeight());
                     shadowTablet.layout(0, 0, shadowTablet.getMeasuredWidth(), shadowTablet.getMeasuredHeight());
+                }
+
+                @Override
+                public boolean onInterceptTouchEvent(MotionEvent event) {
+                    return foldegramHome != null && foldegramHome.intercept(event) || super.onInterceptTouchEvent(event);
+                }
+
+                @Override
+                public boolean dispatchTouchEvent(MotionEvent event) {
+                    if (foldegramHome != null) foldegramHome.touch(event);
+                    return super.dispatchTouchEvent(event);
                 }
 
                 @Override
@@ -1071,6 +1137,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             final View layersView = layersActionBarLayout.getView();
             layersView.setVisibility(layerFragmentsStack.isEmpty() ? View.GONE : View.VISIBLE);
             launchLayout.addView(layersView);
+            foldegramHome = new FoldegramHomeWorkspace(this, launchLayout, drawerLayoutContainer,
+                    actionBarLayout, rightActionBarLayout, launchLayout.indexOfChild(shadowTablet));
+            tabletFullSize = false;
         } else {
             ViewGroup parent = (ViewGroup) actionBarLayout.getView().getParent();
             if (parent != null) {
@@ -1084,7 +1153,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 drawerLayoutContainer.addView(actionBarLayout.getView(), new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             }
         }
-        tabletLayout = AndroidUtilities.isTablet();
+        tabletLayout = isTabletLayout();
         FloatingDebugController.setActive(this, SharedConfig.isFloatingDebugActive, false);
     }
 
@@ -1128,6 +1197,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         if (currentFragment != null && (currentFragment.isRemovingFromStack() || currentFragment.isInPreviewMode())) {
             currentFragment = mainFragmentsStack.size() > 1 ? mainFragmentsStack.get(mainFragmentsStack.size() - 2) : null;
         }
+        if (foldegramHome != null && !foldegramHasModal()) currentFragment = foldegramHome.current().getLastFragment();
         boolean forceLightStatusBar = currentFragment != null && currentFragment.hasForceLightStatusBar();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (checkStatusBar) {
@@ -1203,6 +1273,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     }
 
     public void switchToAccount(int account, boolean removeAll, GenericProvider<Void, MainTabsActivity> dialogsActivityProvider) {
+        if (foldegramHome != null && account != currentAccount) {
+            foldegramHome.reset(); foldegramResultOwners.clear();
+        }
         if (account == UserConfig.selectedAccount || !UserConfig.isValidAccount(account)) {
             return;
         }
@@ -1214,7 +1287,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
         checkCurrentAccount();
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.activeAccountChanged, account);
-        if (AndroidUtilities.isTablet()) {
+        if (isTabletLayout()) {
             layersActionBarLayout.removeAllFragments();
             rightActionBarLayout.removeAllFragments();
             if (!tabletFullSize) {
@@ -1233,7 +1306,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         MainTabsActivity mainTabsActivity = dialogsActivityProvider.provide(null);
         actionBarLayout.addFragmentToStack(mainTabsActivity, INavigationLayout.FORCE_ATTACH_VIEW_AS_FIRST);
         actionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
-        if (AndroidUtilities.isTablet()) {
+        if (isTabletLayout()) {
             layersActionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
             rightActionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
         }
@@ -1265,7 +1338,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             RestrictedLanguagesSelectActivity.checkRestrictedLanguages(true);
             clearFragments();
             actionBarLayout.rebuildLogout();
-            if (AndroidUtilities.isTablet()) {
+            if (isTabletLayout()) {
                 layersActionBarLayout.rebuildLogout();
                 rightActionBarLayout.rebuildLogout();
             }
@@ -1278,7 +1351,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             fragment.onFragmentDestroy();
         }
         mainFragmentsStack.clear();
-        if (AndroidUtilities.isTablet()) {
+        if (isTabletLayout()) {
             for (BaseFragment fragment : layerFragmentsStack) {
                 fragment.onFragmentDestroy();
             }
@@ -1332,7 +1405,12 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     }
 
     private void checkLayout() {
-        if (!tabletLayout || !AndroidUtilities.isTablet() || rightActionBarLayout == null) {
+        if (foldegramHome != null) {
+            tabletFullSize = false;
+            launchLayout.requestLayout();
+            return;
+        }
+        if (!tabletLayout || !isTabletLayout() || rightActionBarLayout == null) {
             return;
         }
 
@@ -1459,7 +1537,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         passcodeDialog.show();
         passcodeDialog.passcodeView.onShow(overlayPasscodeViews.isEmpty() && fingerprint, animated, x, y, () -> {
             actionBarLayout.getView().setVisibility(View.INVISIBLE);
-            if (AndroidUtilities.isTablet()) {
+            if (isTabletLayout()) {
                 if (layersActionBarLayout != null && layersActionBarLayout.getView() != null && layersActionBarLayout.getView().getVisibility() == View.VISIBLE) {
                     layersActionBarLayout.getView().setVisibility(View.INVISIBLE);
                 }
@@ -1485,7 +1563,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             actionBarLayout.getView().setVisibility(View.VISIBLE);
             actionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
             actionBarLayout.updateTitleOverlay();
-            if (AndroidUtilities.isTablet()) {
+            if (isTabletLayout()) {
                 layersActionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
                 rightActionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
                 if (layersActionBarLayout.getView().getVisibility() == View.INVISIBLE) {
@@ -3067,7 +3145,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     LaunchActivity.dismissAllWeb();
                 }
             } else if (showDialogsList) {
-                if (!AndroidUtilities.isTablet()) {
+                if (!isTabletLayout()) {
                     actionBarLayout.removeAllFragments();
                 } else {
                     if (layersActionBarLayout != null && !layersActionBarLayout.getFragmentStack().isEmpty()) {
@@ -3112,7 +3190,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 });
                 pushOpened = false;
             } else if (videoPath != null || voicePath != null || photoPathsArray != null || sendingText != null || documentsPathsArray != null || contactsToSend != null || documentsUrisArray != null) {
-                if (!AndroidUtilities.isTablet()) {
+                if (!isTabletLayout()) {
                     NotificationCenter.getInstance(intentAccount[0]).postNotificationName(NotificationCenter.closeChats);
                 }
                 if (dialogId == 0) {
@@ -3191,7 +3269,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 } else {
                     AndroidUtilities.runOnUIThread(() -> presentFragment(fragment, closePreviousFinal, false));
                 }
-                if (AndroidUtilities.isTablet()) {
+                if (isTabletLayout()) {
                     actionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
                     rightActionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
                 }
@@ -3200,7 +3278,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 Bundle args = new Bundle();
                 args.putBoolean("destroyAfterSelect", true);
                 getActionBarLayout().presentFragment(new INavigationLayout.NavigationParams(new ContactsActivity(args)).setNoAnimation(true));
-                if (AndroidUtilities.isTablet()) {
+                if (isTabletLayout()) {
                     actionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
                     rightActionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
                 }
@@ -3219,7 +3297,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     VoIPHelper.startCall(user, videoCall, userFull != null && userFull.video_calls_available, LaunchActivity.this, userFull, AccountInstance.getInstance(intentAccount[0]));
                 });
                 getActionBarLayout().presentFragment(new INavigationLayout.NavigationParams(contactsFragment).setRemoveLast(actionBarLayout.getLastFragment() instanceof ContactsActivity));
-                if (AndroidUtilities.isTablet()) {
+                if (isTabletLayout()) {
                     actionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
                     rightActionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
                 }
@@ -3244,7 +3322,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     }));
                 });
                 getActionBarLayout().presentFragment(new INavigationLayout.NavigationParams(fragment).setNoAnimation(true));
-                if (AndroidUtilities.isTablet()) {
+                if (isTabletLayout()) {
                     actionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
                     rightActionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
                 }
@@ -3262,7 +3340,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 }
                 fragment.show();
                // getActionBarLayout().presentFragment(new INavigationLayout.NavigationParams(fragment).setNoAnimation(true));
-                if (AndroidUtilities.isTablet()) {
+                if (isTabletLayout()) {
                     actionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
                     rightActionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
                 }
@@ -3297,7 +3375,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 }
             } else if (showCallLog) {
                 getActionBarLayout().presentFragment(new INavigationLayout.NavigationParams(new CallLogActivity()).setNoAnimation(true));
-                if (AndroidUtilities.isTablet()) {
+                if (isTabletLayout()) {
                     actionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
                     rightActionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
                 }
@@ -3308,7 +3386,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             }
         }
         if (!pushOpened && !isNew) {
-            if (AndroidUtilities.isTablet()) {
+            if (isTabletLayout()) {
                 if (!UserConfig.getInstance(currentAccount).isClientActivated()) {
                     if (layersActionBarLayout.getFragmentStack().isEmpty()) {
                         layersActionBarLayout.addFragmentToStack(getClientNotActivatedFragment(), INavigationLayout.FORCE_NOT_ATTACH_VIEW);
@@ -3339,7 +3417,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             }
             if (rebuildFragments) {
                 actionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
-                if (AndroidUtilities.isTablet()) {
+                if (isTabletLayout()) {
                     layersActionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
                     rightActionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
                 }
@@ -3491,7 +3569,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             }
         }
         final boolean removeLast;
-        if (AndroidUtilities.isTablet()) {
+        if (isTabletLayout()) {
             removeLast = !layersActionBarLayout.getFragmentStack().isEmpty() && layersActionBarLayout.getFragmentStack().get(layersActionBarLayout.getFragmentStack().size() - 1) instanceof MainTabsActivity;
         } else {
             removeLast = actionBarLayout.getFragmentStack().size() > 1 && actionBarLayout.getFragmentStack().get(actionBarLayout.getFragmentStack().size() - 1) instanceof MainTabsActivity;
@@ -3510,7 +3588,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         }
 
         if (!animated) {
-            if (AndroidUtilities.isTablet()) {
+            if (isTabletLayout()) {
                 actionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
                 rightActionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
             }
@@ -3796,7 +3874,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                         GroupCallActivity.groupCallInstance.dismiss();
                     }
 
-                    if (AndroidUtilities.isTablet()) {
+                    if (isTabletLayout()) {
                         actionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
                         rightActionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
                     }
@@ -3804,7 +3882,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     DialogsActivity fragment = new DialogsActivity(args);
                     fragment.setDelegate(this);
                     final boolean removeLast;
-                    if (AndroidUtilities.isTablet()) {
+                    if (isTabletLayout()) {
                         removeLast = !layersActionBarLayout.getFragmentStack().isEmpty() && layersActionBarLayout.getFragmentStack().get(layersActionBarLayout.getFragmentStack().size() - 1) instanceof MainTabsActivity;
                     } else {
                         removeLast = actionBarLayout.getFragmentStack().size() > 1 && actionBarLayout.getFragmentStack().get(actionBarLayout.getFragmentStack().size() - 1) instanceof MainTabsActivity;
@@ -3890,7 +3968,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 } else {
                     chatActivity.setHighlightQuote(messageId, quote, quoteOffset);
                 }
-                if (!(AndroidUtilities.isTablet() ? rightActionBarLayout : getActionBarLayout()).presentFragment(chatActivity) && dialogId < 0) {
+                if (!(isTabletLayout() ? rightActionBarLayout : getActionBarLayout()).presentFragment(chatActivity) && dialogId < 0) {
                     TLRPC.TL_channels_getChannels req = new TLRPC.TL_channels_getChannels();
                     TLRPC.TL_inputChannel inputChannel = new TLRPC.TL_inputChannel();
                     inputChannel.channel_id = -dialogId;
@@ -4462,7 +4540,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                                 return true;
                             });
                             final boolean removeLast;
-                            if (AndroidUtilities.isTablet()) {
+                            if (isTabletLayout()) {
                                 removeLast = !layersActionBarLayout.getFragmentStack().isEmpty() && layersActionBarLayout.getFragmentStack().get(layersActionBarLayout.getFragmentStack().size() - 1) instanceof MainTabsActivity;
                             } else {
                                 removeLast = actionBarLayout.getFragmentStack().size() > 1 && actionBarLayout.getFragmentStack().get(actionBarLayout.getFragmentStack().size() - 1) instanceof MainTabsActivity;
@@ -4479,7 +4557,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                             if (GroupCallActivity.groupCallInstance != null) {
                                 GroupCallActivity.groupCallInstance.dismiss();
                             }
-                            if (AndroidUtilities.isTablet()) {
+                            if (isTabletLayout()) {
                                 actionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
                                 rightActionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
                             }
@@ -5564,7 +5642,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                             return;
                         }
                         SharedPrefsHelper.setWebViewConfirmShown(currentAccount, user.id, true);
-//                        if (AndroidUtilities.isTablet() || true) {
+//                        if (isTabletLayout() || true) {
                             BotWebViewSheet sheet = new BotWebViewSheet(LaunchActivity.this, lastFragment != null ? lastFragment.getResourceProvider() : null);
                             sheet.setWasOpenedByLinkIntent(openedTelegram);
                             sheet.setDefaultFullsize(!botCompact);
@@ -5725,7 +5803,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     return;
                 }
                 BaseFragment lastFragment_ = mainFragmentsStack.get(mainFragmentsStack.size() - 1);
-                if (AndroidUtilities.isTablet() && !(lastFragment_ instanceof ChatActivity) && !rightFragmentsStack.isEmpty()) {
+                if (isTabletLayout() && !(lastFragment_ instanceof ChatActivity) && !rightFragmentsStack.isEmpty()) {
                     lastFragment_ = rightFragmentsStack.get(rightFragmentsStack.size() - 1);
                 }
                 final BaseFragment lastFragment = lastFragment_;
@@ -6225,7 +6303,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 if (result != 0) {
                     Bundle args = new Bundle();
                     args.putBoolean("scrollToTopOnResume", true);
-                    if (!AndroidUtilities.isTablet()) {
+                    if (!isTabletLayout()) {
                         NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.closeChats);
                     }
                     if (DialogObject.isUserDialog(result)) {
@@ -6264,7 +6342,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
                 Bundle args = new Bundle();
                 args.putBoolean("scrollToTopOnResume", true);
-                if (!AndroidUtilities.isTablet()) {
+                if (!isTabletLayout()) {
                     NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.closeChats);
                 }
                 if (DialogObject.isEncryptedDialog(did)) {
@@ -6614,7 +6692,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     }
 
     public INavigationLayout getActionBarLayout() {
-        INavigationLayout currentLayout = actionBarLayout;
+        INavigationLayout currentLayout = foldegramHome != null && !foldegramHasModal()
+                ? foldegramHome.current() : actionBarLayout;
         if (!sheetFragmentsStack.isEmpty()) {
             currentLayout = sheetFragmentsStack.get(sheetFragmentsStack.size() - 1);
         }
@@ -6653,6 +6732,19 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             return;
         }
         super.onActivityResult(requestCode, resultCode, data);
+        BaseFragment foldegramOwner = foldegramResultOwners.get(requestCode);
+        foldegramResultOwners.remove(requestCode);
+        if (foldegramOwner != null || foldegramHome != null && foldegramHome.isTwo() && isFoldegramMediaResult(requestCode)) {
+            // A lost/recreated owner cancels this result instead of delivering media to another pane.
+            if (foldegramOwner != null && foldegramOwner.getParentLayout() != null
+                    && foldegramOwner.getParentLayout().getLastFragment() == foldegramOwner
+                    && foldegramOwner.getCurrentAccount() == currentAccount
+                    && !SharedConfig.appLocked && !SharedConfig.isWaitingForPasscodeEnter) {
+                foldegramOwner.onActivityResultFragment(requestCode, resultCode, data);
+            }
+            NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.onActivityResultReceived, requestCode, resultCode, data);
+            return;
+        }
         if (requestCode == SCREEN_CAPTURE_REQUEST_CODE) {
             if (resultCode == Activity.RESULT_OK) {
                 VoIPService service = VoIPService.getSharedInstance();
@@ -6680,7 +6772,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     fragment.getLastStoryViewer().onActivityResult(requestCode, resultCode, data);
                 }
             }
-            if (AndroidUtilities.isTablet()) {
+            if (isTabletLayout()) {
                 if (rightActionBarLayout != null && rightActionBarLayout.getFragmentStack().size() != 0) {
                     BaseFragment fragment = rightActionBarLayout.getFragmentStack().get(rightActionBarLayout.getFragmentStack().size() - 1);
                     fragment.onActivityResultFragment(requestCode, resultCode, data);
@@ -6705,11 +6797,18 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         if (!checkPermissionsResult(requestCode, permissions, grantResults)) return;
         if (ApplicationLoader.applicationLoaderInstance != null && ApplicationLoader.applicationLoaderInstance.checkRequestPermissionResult(requestCode, permissions, grantResults)) return;
 
+        if (foldegramHome != null && foldegramHome.isTwo()) {
+            BaseFragment owner = foldegramHome.current().getLastFragment();
+            if (owner != null && owner.getCurrentAccount() == currentAccount
+                    && !SharedConfig.appLocked && !SharedConfig.isWaitingForPasscodeEnter) {
+                owner.onRequestPermissionsResultFragment(requestCode, permissions, grantResults);
+            }
+        } else {
         if (actionBarLayout.getFragmentStack().size() != 0) {
             BaseFragment fragment = actionBarLayout.getFragmentStack().get(actionBarLayout.getFragmentStack().size() - 1);
             fragment.onRequestPermissionsResultFragment(requestCode, permissions, grantResults);
         }
-        if (AndroidUtilities.isTablet()) {
+        if (isTabletLayout()) {
             if (rightActionBarLayout.getFragmentStack().size() != 0) {
                 BaseFragment fragment = rightActionBarLayout.getFragmentStack().get(rightActionBarLayout.getFragmentStack().size() - 1);
                 fragment.onRequestPermissionsResultFragment(requestCode, permissions, grantResults);
@@ -6720,6 +6819,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             }
         }
 
+        }
         VoIPFragment.onRequestPermissionsResult(requestCode, permissions, grantResults);
         StoryRecorder.onRequestPermissionsResult(requestCode, permissions, grantResults);
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.onRequestPermissionResultReceived, requestCode, permissions, grantResults);
@@ -6742,6 +6842,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     @Override
     protected void onPause() {
         super.onPause();
+        if (foldegramHome != null) foldegramHome.pause();
         isResumed = false;
         pipActivityHandler.onPause();
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.stopAllHeavyOperations, 4096);
@@ -6756,7 +6857,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         });
         onPasscodePause();
         actionBarLayout.onPause();
-        if (AndroidUtilities.isTablet()) {
+        if (isTabletLayout()) {
             if (rightActionBarLayout != null) {
                 rightActionBarLayout.onPause();
             }
@@ -6867,6 +6968,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     @Override
     protected void onDestroy() {
+        if (foldegramHome != null) foldegramHome.destroy();
         if (drawerLayoutContainer != null) {
             drawerLayoutContainer.removeCallbacks(refreshWindowLayoutRunnable);
         }
@@ -7006,7 +7108,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         onPasscodeResume();
         if (passcodeDialog == null || passcodeDialog.passcodeView.getVisibility() != View.VISIBLE) {
             actionBarLayout.onResume();
-            if (AndroidUtilities.isTablet()) {
+            if (isTabletLayout()) {
                 if (rightActionBarLayout != null) {
                     rightActionBarLayout.onResume();
                 }
@@ -7016,7 +7118,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             }
         } else {
             actionBarLayout.dismissDialogs();
-            if (AndroidUtilities.isTablet()) {
+            if (isTabletLayout()) {
                 if (rightActionBarLayout != null) {
                     rightActionBarLayout.dismissDialogs();
                 }
@@ -7057,6 +7159,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             VoIPFragment.onResume();
         }
         refreshWindowLayout("resume");
+        if (foldegramHome != null) foldegramHome.syncFocus();
         SpoilerEffect2.pause(false);
 
         if (ApplicationLoader.applicationLoaderInstance != null) {
@@ -7079,11 +7182,15 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     public static Runnable whenResumed;
 
     private void invalidateTabletMode() {
+        if (foldegramHome != null) {
+            AndroidUtilities.resetWasTabletFlag();
+            return;
+        }
         // Application and activity configuration callbacks may update the shared cache
         // in either order. Compare with the hierarchy we actually built instead.
         final boolean wasTablet = tabletLayout;
         AndroidUtilities.resetWasTabletFlag();
-        if (wasTablet != AndroidUtilities.isTablet()) {
+        if (wasTablet != isTabletLayout()) {
             logWindowLayout("tabletModeChanged");
             long dialogId = 0;
             long topicId = 0;
@@ -7114,7 +7221,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
             setupActionBarLayout();
             actionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
-            if (AndroidUtilities.isTablet()) {
+            if (isTabletLayout()) {
                 rightActionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
                 layersActionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
 
@@ -7169,7 +7276,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             + " smallestDp=" + configuration.smallestScreenWidthDp
             + " displayPx=" + AndroidUtilities.displaySize.x + "x" + AndroidUtilities.displaySize.y
             + " rootPx=" + (drawerLayoutContainer == null ? "none" : drawerLayoutContainer.getWidth() + "x" + drawerLayoutContainer.getHeight())
-            + " tablet=" + AndroidUtilities.isTablet() + " attachedTablet=" + tabletLayout
+            + " tablet=" + isTabletLayout() + " attachedTablet=" + tabletLayout
             + " fullSize=" + tabletFullSize + " multiWindow=" + AndroidUtilities.isInMultiwindow
             + " resumed=" + isResumed
             + " stacks=" + mainFragmentsStack.size() + "/" + rightFragmentsStack.size() + "/" + layerFragmentsStack.size());
@@ -7522,7 +7629,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 return;
             }
             actionBarLayout.animateThemedValues(theme, accentId, nightTheme, instant, calcInBackgroundEnd);
-            if (AndroidUtilities.isTablet()) {
+            if (isTabletLayout()) {
                 if (layersActionBarLayout != null) {
                     layersActionBarLayout.animateThemedValues(theme, accentId, nightTheme, instant);
                 }
@@ -8281,7 +8388,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         if (currentConnectionState == ConnectionsManager.ConnectionStateConnecting || currentConnectionState == ConnectionsManager.ConnectionStateConnectingToProxy) {
             action = () -> {
                 BaseFragment lastFragment = null;
-                if (AndroidUtilities.isTablet()) {
+                if (isTabletLayout()) {
                     if (!layerFragmentsStack.isEmpty()) {
                         lastFragment = layerFragmentsStack.get(layerFragmentsStack.size() - 1);
                     }
@@ -8308,10 +8415,11 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     @Override
     protected void onSaveInstanceState(Bundle outState) {
+        if (foldegramHome != null) foldegramHome.save(outState);
         try {
             super.onSaveInstanceState(outState);
             BaseFragment lastFragment = null;
-            if (AndroidUtilities.isTablet()) {
+            if (isTabletLayout()) {
                 if (layersActionBarLayout != null && !layersActionBarLayout.getFragmentStack().isEmpty()) {
                     lastFragment = layersActionBarLayout.getFragmentStack().get(layersActionBarLayout.getFragmentStack().size() - 1);
                 } else if (rightActionBarLayout != null && !rightActionBarLayout.getFragmentStack().isEmpty()) {
@@ -8361,7 +8469,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         if (!onBackPressed(true)) {
             return;
         }
-        if (AndroidUtilities.isTablet()) {
+        if (foldegramHome != null && !foldegramHasModal() && foldegramHome.back(true)) return;
+        if (isTabletLayout()) {
             if (layersActionBarLayout != null && layersActionBarLayout.getView().getVisibility() == View.VISIBLE) {
                 layersActionBarLayout.onBackPressed();
             } else {
@@ -8414,7 +8523,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         super.onLowMemory();
         if (actionBarLayout != null) {
             actionBarLayout.onLowMemory();
-            if (AndroidUtilities.isTablet()) {
+            if (isTabletLayout()) {
                 if (rightActionBarLayout != null) {
                     rightActionBarLayout.onLowMemory();
                 }
@@ -8433,7 +8542,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             Menu menu = mode.getMenu();
             if (menu != null) {
                 boolean extended = actionBarLayout.extendActionMode(menu);
-                if (!extended && AndroidUtilities.isTablet()) {
+                if (!extended && isTabletLayout()) {
                     extended = rightActionBarLayout.extendActionMode(menu);
                     if (!extended) {
                         layersActionBarLayout.extendActionMode(menu);
@@ -8447,7 +8556,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             return;
         }
         actionBarLayout.onActionModeStarted(mode);
-        if (AndroidUtilities.isTablet()) {
+        if (isTabletLayout()) {
             rightActionBarLayout.onActionModeStarted(mode);
             layersActionBarLayout.onActionModeStarted(mode);
         }
@@ -8463,7 +8572,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             return;
         }
         actionBarLayout.onActionModeFinished(mode);
-        if (AndroidUtilities.isTablet()) {
+        if (isTabletLayout()) {
             rightActionBarLayout.onActionModeFinished(mode);
             layersActionBarLayout.onActionModeFinished(mode);
         }
@@ -8513,7 +8622,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                         return true;
                     }
                 }
-                if (AndroidUtilities.isTablet() && !rightFragmentsStack.isEmpty()) {
+                if (isTabletLayout() && !rightFragmentsStack.isEmpty()) {
                     fragment = rightFragmentsStack.get(rightFragmentsStack.size() - 1);
                     if (fragment instanceof ChatActivity && !BaseFragment.hasSheets(fragment)) {
                         if (((ChatActivity) fragment).maybePlayVisibleVideo()) {
@@ -8539,7 +8648,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             } else if (ArticleViewer.hasInstance() && ArticleViewer.getInstance().isVisible()) {
                 return super.onKeyUp(keyCode, event);
             }
-            if (AndroidUtilities.isTablet()) {
+            if (isTabletLayout()) {
                 if (layersActionBarLayout.getView().getVisibility() == View.VISIBLE && !layersActionBarLayout.getFragmentStack().isEmpty()) {
                     layersActionBarLayout.getView().onKeyUp(keyCode, event);
                 } else if (rightActionBarLayout.getView().getVisibility() == View.VISIBLE && !rightActionBarLayout.getFragmentStack().isEmpty()) {
@@ -8556,6 +8665,10 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     @Override
     public boolean needPresentFragment(INavigationLayout layout, INavigationLayout.NavigationParams params) {
+        if (foldegramHome != null) {
+            Boolean result = foldegramHome.present(layout, params);
+            if (result != null) return result;
+        }
         BaseFragment fragment = params.fragment;
         boolean removeLast = params.removeLast;
         boolean forceWithoutAnimation = params.noAnimation;
@@ -8563,7 +8676,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         if (ArticleViewer.hasInstance() && ArticleViewer.getInstance().isVisible()) {
             ArticleViewer.getInstance().close(false, true);
         }
-        if (AndroidUtilities.isTablet()) {
+        if (isTabletLayout()) {
             if (fragment instanceof MainTabsActivity) {
                 if (layout != actionBarLayout) {
                     actionBarLayout.removeAllFragments();
@@ -8680,7 +8793,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     @Override
     public boolean needAddFragmentToStack(BaseFragment fragment, INavigationLayout layout) {
-        if (AndroidUtilities.isTablet()) {
+        if (foldegramHome != null && layout == foldegramHome.second) return true;
+        if (isTabletLayout()) {
             if (fragment instanceof DialogsActivity || fragment instanceof MainTabsActivity) {
                 boolean needReplace = layout != actionBarLayout;
                 if (needReplace && fragment instanceof DialogsActivity) {
@@ -8753,7 +8867,11 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     @Override
     public boolean needCloseLastFragment(INavigationLayout layout) {
-        if (AndroidUtilities.isTablet()) {
+        if (foldegramHome != null) {
+            Boolean result = foldegramHome.close(layout);
+            if (result != null) return result;
+        }
+        if (isTabletLayout()) {
             if (layout == actionBarLayout && layout.getFragmentStack().size() <= 1 && !switchingAccount) {
                 onFinish();
                 finish();
@@ -8787,7 +8905,10 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     @Override
     public void onRebuildAllFragments(INavigationLayout layout, boolean last) {
-        if (AndroidUtilities.isTablet()) {
+        if (foldegramHome != null && layout != foldegramHome.second) {
+            foldegramHome.second.rebuildAllFragmentViews(last, last);
+        }
+        if (isTabletLayout()) {
             if (layout == layersActionBarLayout) {
                 rightActionBarLayout.rebuildAllFragmentViews(last, last);
                 actionBarLayout.rebuildAllFragmentViews(last, last);

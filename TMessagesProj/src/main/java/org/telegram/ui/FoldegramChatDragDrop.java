@@ -102,6 +102,8 @@ final class FoldegramChatDragDrop {
         armedUntil = 0;
         boolean direct = owner.getParentActivity() instanceof FoldegramChatWindowActivity
                 && ((FoldegramChatWindowActivity) owner.getParentActivity()).canStartMessageDrag(owner);
+        direct |= owner.getParentActivity() instanceof LaunchActivity
+                && ((LaunchActivity) owner.getParentActivity()).canDragFoldegramChat(owner);
         if ((!armed && !direct) || !owner.canDragFoldegramMessage(message)) {
             return false;
         }

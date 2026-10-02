@@ -186,6 +186,8 @@ public class FoldegramChatWindowActivity extends BasePermissionsActivity impleme
             return;
         }
         ChatActivity chat = (ChatActivity) source;
+        if (chat.getParentActivity() instanceof LaunchActivity
+                && ((LaunchActivity) chat.getParentActivity()).openFoldegramHome(chat)) return;
         if (!canTransferComposition(chat)) {
             Toast.makeText(source.getParentActivity(), R.string.FoldegramFinishComposition, Toast.LENGTH_LONG).show();
             return;
@@ -250,7 +252,7 @@ public class FoldegramChatWindowActivity extends BasePermissionsActivity impleme
         return picker;
     }
 
-    private static Bundle argumentsForDialog(long dialogId, long topicId) {
+    static Bundle argumentsForDialog(long dialogId, long topicId) {
         Bundle args = new Bundle();
         if (DialogObject.isEncryptedDialog(dialogId)) {
             args.putInt("enc_id", DialogObject.getEncryptedChatId(dialogId));

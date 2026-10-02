@@ -19798,6 +19798,9 @@ public class ChatActivity extends BaseFragment implements
         if (activity instanceof FoldegramChatWindowActivity) {
             return ((FoldegramChatWindowActivity) activity).activateForDrop(this);
         }
+        if (activity instanceof LaunchActivity && ((LaunchActivity) activity).ownsFoldegramChat(this)) {
+            return ((LaunchActivity) activity).activateFoldegramChat(this);
+        }
         return canAcceptFoldegramDrop(false);
     }
 
@@ -22425,7 +22428,9 @@ public class ChatActivity extends BaseFragment implements
         } else if (id == NotificationCenter.didLoadSponsoredMessages) {
             addSponsoredMessages(true);
         } else if (id == NotificationCenter.closeChats) {
-            if (getParentActivity() instanceof FoldegramChatWindowActivity && (args == null || args.length == 0)) {
+            if ((getParentActivity() instanceof FoldegramChatWindowActivity
+                    || getParentActivity() instanceof LaunchActivity && ((LaunchActivity) getParentActivity()).ownsFoldegramChat(this))
+                    && (args == null || args.length == 0)) {
                 return;
             }
             if (args != null && args.length > 0) {

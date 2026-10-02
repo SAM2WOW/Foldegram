@@ -339,7 +339,9 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
         telegramLogoView.setColorFilter(getTextLogoColor(), PorterDuff.Mode.MULTIPLY);
         telegramLogoView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
         telegramLogoView.setFocusableInTouchMode(true);
-        addView(telegramLogoView, LayoutHelper.createFrame(90, 22));
+        // The approved crane is an icon, not the upstream 90dp wordmark. Tight bounds
+        // keep it beside the collapsed avatars instead of floating in the middle.
+        addView(telegramLogoView, LayoutHelper.createFrame(26, 26));
 
         statusDrawable = new AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable(null, dp(26));
         statusDrawable.center = true;
@@ -941,8 +943,14 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
             titleView.setTranslationX(lastViewRight);
             titleView.getDrawable().setRightPadding(lastViewRight - dp(12) + actionBar.menu.getVisibleItemsMeasuredWidthWithAlpha() * progress);
 
-            telegramLogoView.setTranslationX(titleView.getTranslationX() + dp(1));
-            telegramLogoView.setTranslationY(bottomY + dp(14 + FAKE_TOP_PADDING + 4.333f) + translationOffset /*titleView.getTranslationY() + dpf2(37.33f)*/);
+            final float craneOpticalX = dp(24) * (32f - 29.7975f) / 64f;
+            final float craneOpticalY = dp(24) * (32f - 30.866f) / 64f;
+            // The title's native placement already reserves story avatars and menu space.
+            // Use the same start anchor in RTL; never mirror the crane polygons themselves.
+            telegramLogoView.setTranslationX(titleView.getTranslationX() + craneOpticalX);
+            telegramLogoView.setTranslationY(bottomY + dp(FAKE_TOP_PADDING)
+                    + (ActionBar.getCurrentActionBarHeight() - telegramLogoView.getMeasuredHeight()) / 2f
+                    + translationOffset + craneOpticalY);
 
             emojiStatusView.setTranslationX(titleView.getTranslationX() - dpf2(3.33f) + telegramLogoView.getMeasuredWidth());
             emojiStatusView.setTranslationY(bottomY + dp(14 - 11 + FAKE_TOP_PADDING + 4.333f) + translationOffset);

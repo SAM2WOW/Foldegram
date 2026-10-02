@@ -135,6 +135,9 @@ public class FoldableLayoutRegressionTest {
     }
     static class LaunchActivity extends Context {
         boolean tabletLayout, tabletFullSize, multiWindow, destroyed, finishing;
+        Object foldegramHome;
+        View launchLayout = new View();
+        boolean isTabletLayout() { return foldegramHome != null || AndroidUtilities.isTablet(); }
         int setups;
         final ArrayList<BaseFragment> mainFragmentsStack = new ArrayList<>();
         final ArrayList<BaseFragment> rightFragmentsStack = new ArrayList<>();

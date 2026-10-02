@@ -1,58 +1,48 @@
-# Foldegram for Android
+<p align="center">
+  <img src="docs/foldegram/origami-crane.svg" width="160" height="160" alt="Foldegram — white origami crane on a deep navy background">
+</p>
+<h1 align="center">Foldegram</h1>
+<p align="center"><strong>More room for conversation.</strong><br>A foldable-focused Telegram client for Android.</p>
+<p align="center">
+  <a href="docs/BUILD_FOLDEGRAM.md">Build guide</a> ·
+  <a href="docs/foldegram/PREVIEW_4.md">Preview notes</a> ·
+  <a href="LICENSE">License</a>
+</p>
 
-An unofficial, experimental Telegram fork with an independent Android package
-and original origami-crane identity. Based on Telegram 12.10.6.
+Foldegram brings two conversations into one workspace, with quick chat switching and drag-and-drop previews built around Android's native Telegram interface. It uses the Telegram service and builds on Telegram for Android **12.10.6**.
 
-Start with [the Foldegram build guide](docs/BUILD_FOLDEGRAM.md). It explains the
-private API configuration, ARM64 debug client, and explicitly offline setup APK.
-Do not use upstream example credentials or follow the original release-signing
-instructions below for this fork. The upstream README is preserved for provenance.
+**Unofficial and experimental.** Foldegram is an independent fork, not affiliated with or endorsed by Telegram. Its crane identity and separate Android package (`dev.foldegram.messenger`) let it coexist with the official app.
 
----
+## What makes it Foldegram?
 
-## Telegram messenger for Android
+| Area | Official Telegram foundation¹ | Foldegram's additions |
+| --- | --- | --- |
+| Workspace | Native phone and tablet navigation | Two live chat panes on wide screens; an active pane on narrow screens, with fold/resize lifecycle work |
+| Switching chats | Chat list and search | Searchable sidebar, left tap handle and inward swipe; drag a conversation onto a pane to switch only that pane |
+| Sharing into a chat | Native attachment, media-preview and sending flows | External text/image drops into an ordinary chat or workspace pane; a single image offers **Photo · compressed** or **File · original quality**, followed by preview and explicit Send |
+| Moving between chats | Native forwarding | Internal text/photo forwarding previews between panes, retaining content restrictions |
+| Look and feel | Native chat views, headers and transitions | Original origami-crane branding, rounded panes, a small gutter, soft hover outlines and subtle acceptance feedback |
 
-[Telegram](https://telegram.org) is a messaging app with a focus on speed and security. It’s superfast, simple and free.
-This repo contains the official source code for [Telegram App for Android](https://play.google.com/store/apps/details?id=org.telegram.messenger).
+¹ Comparison is with the [pinned Telegram 12.10.6 source](https://github.com/DrKLO/Telegram/tree/f2908b14133bbffbf7ab04f641ecb5bfaf533242), not a claim about every current official client or platform.
 
-## Creating your Telegram Application
+Drops do not send automatically. Account, lock, destination permissions and protected-content checks remain in place. Secret/protected-chat and passcode screenshot restrictions are preserved. Added sidebar and acceptance animations honor the app's animation setting.
 
-We welcome all developers to use our API and source code to create applications on our platform.
-There are several things we require from **all developers** for the moment.
+## Preview status
 
-1. [**Obtain your own api_id**](https://core.telegram.org/api/obtaining_api_id) for your application.
-2. Please **do not** use the name Telegram for your app — or make sure your users understand that it is unofficial.
-3. Kindly **do not** use our standard logo (white paper plane in a blue circle) as your app's logo.
-3. Please study our [**security guidelines**](https://core.telegram.org/mtproto/security_guidelines) and take good care of your users' data and privacy.
-4. Please remember to publish **your** code too in order to comply with the licences.
+**Dev4 is a development preview, not a production release.** Host validation passed 37 tests plus the identity check; ARM64 assembly and lint completed with 0 errors and 34 warnings. APK signature, resources and 16 KB alignment were checked.
 
-### API, Protocol documentation
+These checks are **not device verification**. Screenshot behavior, Google Photos delivery, folding, edge gestures and animation feel still need physical-device testing. See the [dev4 findings and phone checklist](docs/foldegram/PREVIEW_4.md).
 
-Telegram API manuals: https://core.telegram.org/api
+Service integration is incomplete: push notifications may be delayed, embedded Google Maps is unconfigured, and several official-app sign-in and billing integrations are disabled. Development APKs use a publicly known test signing key and are unsuitable as maintained production releases. Details are in the [build guide](docs/BUILD_FOLDEGRAM.md).
 
-MTproto protocol manuals: https://core.telegram.org/mtproto
+## Build and contribute
 
-### Compilation Guide
+Use the [Foldegram build guide](docs/BUILD_FOLDEGRAM.md) for the toolchain, your own Telegram API configuration and signing requirements. Keep credentials out of source control. Development lives on [`foldegram/foldable-preview`](https://github.com/SAM2WOW/Foldegram/tree/foldegram/foldable-preview).
 
-**Note**: In order to support [reproducible builds](https://core.telegram.org/reproducible-builds), this repo contains dummy release.keystore,  google-services.json and filled variables inside BuildVars.java. Before publishing your own APKs please make sure to replace all these files with your own.
+Bug reports are most useful with the device, Android version, folded/unfolded state and steps to reproduce. Please omit private messages and credentials.
 
-You will require Android Studio 2025.1.4, Android NDK 27.2.12479018 and Android SDK 36.
+## Credits and license
 
-1. Clone the Telegram source code with its submodules:
-   ```bash
-   git clone --recursive --shallow-submodules https://github.com/DrKLO/Telegram.git Telegram
-   ```
-   In case you forgot the `--recursive` flag, change to the `Telegram` directory and run:
-   ```bash
-   git submodule init && git submodule update --init --recursive --depth=1
-   ```
-2. Copy your release.keystore into TMessagesProj/config
-3. Fill out RELEASE_KEY_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_STORE_PASSWORD in gradle.properties to access your  release.keystore
-4.  Go to https://console.firebase.google.com/, create two android apps with application IDs org.telegram.messenger and org.telegram.messenger.beta, turn on firebase messaging and download google-services.json, which should be copied to the same folder as TMessagesProj.
-5. Open the project in the Studio (note that it should be opened, NOT imported).
-6. Fill out values in TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java – there’s a link for each of the variables showing where and which data to obtain.
-7. You are ready to compile Telegram.
+Built on [Telegram for Android](https://github.com/DrKLO/Telegram), by Nikolai Kudashov and its contributors. The core source is licensed under **GNU GPL v2 or later**; see [LICENSE](LICENSE) and the notices in individual files. Third-party components retain their respective licenses. The original Foldegram crane is included under the same GPL-2.0-or-later terms.
 
-### Localization
-
-We moved all translations to https://translations.telegram.org/en/android/. Please use it.
+Preserve upstream notices and provide corresponding source when distributing builds, as required by the applicable licenses. Upstream references: [original README](https://github.com/DrKLO/Telegram/blob/f2908b14133bbffbf7ab04f641ecb5bfaf533242/README.md) · [Telegram API](https://core.telegram.org/api) · [developer security guidelines](https://core.telegram.org/mtproto/security_guidelines).
